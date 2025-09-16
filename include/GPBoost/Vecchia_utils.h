@@ -12,9 +12,43 @@
 #include <GPBoost/type_defs.h>
 #include <GPBoost/re_comp.h>
 #include <GPBoost/utils.h>
+#ifdef USE_CUDA_GP
+#include <cuda_runtime.h>
+#include <cublas_v2.h>
+#include <cusparse.h>
+#include <cusolverDn.h>
+#endif
 
 namespace GPBoost {
 
+#ifdef USE_CUDA_GP
+	bool LaunchCalcCovFactorGradientVecchia_GPU(const int num_neighbors,
+		const double shape,                 // smoothness param
+		const double C,                     // range param
+		const int n,                        // number of data points
+		const int dim_coords,               // coordinate dimension
+		const double* __restrict__ coords,  // n * dim_coords, row-major (coords[i*dim + d])
+		const int* __restrict__ nn_ptr,     // length n+1  (nn_ptr[i+1]-nn_ptr[i] == k_i)
+		const int* __restrict__ nn_idx,     // flattened neighbor indices
+		const double jitter,                // e.g. 1e-8
+		const double nugget_var,            // e.g. 1e-8
+		double* __restrict__ B_data,        // flattened B rows: length == nn_ptr[n] (space preallocated)
+		double* __restrict__ D_inv_data,    // length n
+		double* __restrict__ B_grad_data,   // length = num_params * total_nnz
+		double* __restrict__ D_grad_data,   // length = num_params * n
+		const double* __restrict__ pars,
+		const int num_par,
+		const int num_par_gp,
+		bool gauss_likelihood,
+		bool transf_scale,
+		bool calc_cov_factor,
+		bool calc_gradient,
+		bool calc_gradient_nugget,
+		bool exclude_marg_var_grad,
+		bool ard,
+		const double EPSILON_NUMBERS
+	);
+#endif  // USE_CUDA_GP
 	/*!
 	* \brief Distance function
 	* \param coord_ind_i Index i

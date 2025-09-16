@@ -1296,17 +1296,12 @@ namespace GPBoost {
 					cudaMalloc(&d_nn_idx, nn_idx.size() * sizeof(int));
 					cudaMemcpy(d_nn_idx, nn_idx.data(), nn_idx.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-					int threadsPerBlock = 128;
-					int blocksPerGrid = (num_re_cluster_i + threadsPerBlock - 1) / threadsPerBlock;
-
-					CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
-						num_neighbors, cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
+					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(num_neighbors, cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
 						d_coords, d_nn_ptr, d_nn_idx, jitter, nugget_var,
 						d_B_data, d_D_inv_data, d_B_grad_data, d_D_grad_data,
 						d_pars, num_par_comp, num_par_gp, gauss_likelihood, transf_scale,
 						calc_cov_factor, calc_gradient, calc_gradient_nugget,
-						exclude_marg_var_grad, ard, EPSILON_NUMBERS
-						);
+						exclude_marg_var_grad, ard, EPSILON_NUMBERS);
 
 
 					cudaDeviceSynchronize();
@@ -1317,45 +1312,46 @@ namespace GPBoost {
 					cudaMemcpy(h_B_grad_data, d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
 					cudaMemcpy(h_D_grad_data, d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
 					
-					if (calc_cov_factor) {
-						B_cluster_i.reserve(total_nnz);
-					}
-					if (calc_gradient) {
-						for (int ipar = 0; ipar < num_par_gp; ++ipar)
-							B_grad_cluster_i[ipar].reserve(total_nnz);
-					}
-					// Now build sparse matrices on host
-					for (int i = 0; i < num_re_cluster_i; ++i) {
-						for (int j = nn_ptr[i]; j < nn_ptr[i + 1]; ++j) {
-							int col = nn_idx[j];
+					if (GPU_success) {
+						if (calc_cov_factor) {
+							B_cluster_i.reserve(total_nnz);
+						}
+						if (calc_gradient) {
+							for (int ipar = 0; ipar < num_par_gp; ++ipar)
+								B_grad_cluster_i[ipar].reserve(total_nnz);
+						}
+						// Now build sparse matrices on host
+						for (int i = 0; i < num_re_cluster_i; ++i) {
+							for (int j = nn_ptr[i]; j < nn_ptr[i + 1]; ++j) {
+								int col = nn_idx[j];
+								if (calc_cov_factor) {
+									B_cluster_i.insert(i, col) = h_B_data[j];
+								}
+								if (calc_gradient) {
+									for (int ipar = 0; ipar < num_par_gp; ++ipar) {
+										B_grad_cluster_i[ipar].insert(i, col) = h_B_grad_data[ipar * total_nnz + j];
+									}
+								}
+							}
 							if (calc_cov_factor) {
-								B_cluster_i.insert(i, col) = h_B_data[j];
+								D_inv_cluster_i.insert(i, i) += h_D_inv_data[i];
 							}
 							if (calc_gradient) {
 								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-									B_grad_cluster_i[ipar].insert(i, col) = h_B_grad_data[ipar * total_nnz + j];
+									D_grad_cluster_i[ipar].insert(i, i) = h_D_grad_data[ipar * num_re_cluster_i + i];
 								}
 							}
 						}
 						if (calc_cov_factor) {
-							D_inv_cluster_i.insert(i, i) += h_D_inv_data[i];
+							B_cluster_i.makeCompressed();
 						}
 						if (calc_gradient) {
 							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-								D_grad_cluster_i[ipar].insert(i, i) = h_D_grad_data[ipar * num_re_cluster_i + i];
+								B_grad_cluster_i[ipar].makeCompressed();
+								D_grad_cluster_i[ipar].makeCompressed();
 							}
 						}
 					}
-					if (calc_cov_factor) {
-						B_cluster_i.makeCompressed();
-					}
-					if (calc_gradient) {
-						for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-							B_grad_cluster_i[ipar].makeCompressed();
-							D_grad_cluster_i[ipar].makeCompressed();
-						}
-					}
-
 					cudaFree(d_B_data);
 					cudaFree(d_B_grad_data);
 					cudaFree(d_D_inv_data);
