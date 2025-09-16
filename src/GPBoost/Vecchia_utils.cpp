@@ -1346,38 +1346,66 @@ namespace GPBoost {
 						Log::REInfo("Computation3 = %g ", el_time);
 						std::this_thread::sleep_for(std::chrono::milliseconds(200));
 						// Now build sparse matrices on host
+						// --- Prepare triplets for B_cluster_i ---
+						std::vector<Eigen::Triplet<double>> triplets_B;
+						if (calc_cov_factor) triplets_B.reserve(total_nnz);
+
+						// --- Prepare triplets for B_grad_cluster_i ---
+						std::vector<Eigen::Triplet<double>> triplets_B_grad[num_par_gp];
+						if (calc_gradient) {
+							for (int ipar = 0; ipar < num_par_gp; ++ipar)
+								triplets_B_grad[ipar].reserve(total_nnz);
+						}
+
+						// --- Prepare diagonal triplets for D_inv_cluster_i and D_grad_cluster_i ---
+						std::vector<Eigen::Triplet<double>> triplets_D_inv;
+						if (calc_cov_factor) triplets_D_inv.reserve(num_re_cluster_i);
+
+						std::vector<Eigen::Triplet<double>> triplets_D_grad[num_par_gp];
+						if (calc_gradient) {
+							for (int ipar = 0; ipar < num_par_gp; ++ipar)
+								triplets_D_grad[ipar].reserve(num_re_cluster_i);
+						}
+
+						// --- Fill triplets ---
 						for (int i = 0; i < num_re_cluster_i; ++i) {
 							for (int j = nn_ptr[i]; j < nn_ptr[i + 1]; ++j) {
 								int col = nn_idx[j];
 								if (calc_cov_factor) {
-									B_cluster_i.insert(i, col) = h_B_data[j];
+									triplets_B.emplace_back(i, col, h_B_data[j]);
 								}
 								if (calc_gradient) {
 									for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-										B_grad_cluster_i[ipar].insert(i, col) = h_B_grad_data[ipar * total_nnz + j];
+										triplets_B_grad[ipar].emplace_back(i, col, h_B_grad_data[ipar * total_nnz + j]);
 									}
 								}
 							}
+
 							if (calc_cov_factor) {
-								D_inv_cluster_i.insert(i, i) += h_D_inv_data[i];
+								triplets_D_inv.emplace_back(i, i, h_D_inv_data[i]);
 							}
 							if (calc_gradient) {
 								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-									D_grad_cluster_i[ipar].insert(i, i) = h_D_grad_data[ipar * num_re_cluster_i + i];
+									triplets_D_grad[ipar].emplace_back(i, i, h_D_grad_data[ipar * num_re_cluster_i + i]);
 								}
 							}
 						}
-						end = std::chrono::steady_clock::now();//only for debugging
-						el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-						Log::REInfo("Computation4 = %g ", el_time);
-						std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+						// --- Build sparse matrices ---
 						if (calc_cov_factor) {
-							B_cluster_i.makeCompressed();
+							B_cluster_i.setFromTriplets(triplets_B.begin(), triplets_B.end());
+							D_inv_cluster_i.setFromTriplets(triplets_D_inv.begin(), triplets_D_inv.end());
 						}
-						end = std::chrono::steady_clock::now();//only for debugging
-						el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-						Log::REInfo("Computation5 = %g ", el_time);
-						std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+						if (calc_gradient) {
+							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
+								B_grad_cluster_i[ipar].setFromTriplets(triplets_B_grad[ipar].begin(), triplets_B_grad[ipar].end());
+								D_grad_cluster_i[ipar].setFromTriplets(triplets_D_grad[ipar].begin(), triplets_D_grad[ipar].end());
+							}
+						}
+
+						// --- Optional: compress matrices ---
+						if (calc_cov_factor) B_cluster_i.makeCompressed();
 						if (calc_gradient) {
 							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
 								B_grad_cluster_i[ipar].makeCompressed();
@@ -1386,13 +1414,9 @@ namespace GPBoost {
 						}
 						end = std::chrono::steady_clock::now();//only for debugging
 						el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-						Log::REInfo("Computation6 = %g ", el_time);
+						Log::REInfo("Computation4 = %g ", el_time);
 						std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					}
-					end = std::chrono::steady_clock::now();//only for debugging
-					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Computation10 = %g ", el_time);
-					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					cudaFree(d_B_data);
 					cudaFree(d_B_grad_data);
 					cudaFree(d_D_inv_data);
@@ -1410,7 +1434,7 @@ namespace GPBoost {
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 					Log::REInfo("Post = %g ", el_time);
-
+					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 				}
 			}
 			if (!GPU_success) {
