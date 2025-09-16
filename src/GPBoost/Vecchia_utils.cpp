@@ -1348,15 +1348,6 @@ namespace GPBoost {
 								}
 							}
 						}
-
-						// --- Step 3: Optional compression (already initialized, but safe) ---
-						if (calc_cov_factor) B_cluster_i.makeCompressed();
-						if (calc_gradient) {
-							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-								B_grad_cluster_i[ipar].makeCompressed();
-								D_grad_cluster_i[ipar].makeCompressed();
-							}
-						}
 					}
 					cudaFree(d_B_data);
 					cudaFree(d_B_grad_data);
