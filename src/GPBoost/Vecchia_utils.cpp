@@ -1326,26 +1326,43 @@ namespace GPBoost {
 					cudaMemcpy(h_B_grad_data.data(), d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
 					cudaMemcpy(h_D_grad_data.data(), d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
 					if (GPU_success) {
+						// --- Step 2: Preallocate sparse matrices efficiently ---
+						if (calc_cov_factor) B_cluster_i.reserve(total_nnz);
+						if (calc_gradient) {
+							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
+								B_grad_cluster_i[ipar].reserve(total_nnz);
+								D_grad_cluster_i[ipar].reserve(num_re_cluster_i);
+							}
+						}
+
+						// --- Step 3: Fill values using parallel loops ---
 #pragma omp parallel for
 						for (int i = 0; i < num_re_cluster_i; ++i) {
-							for (int j = nn_ptr[i]; j < nn_ptr[i + 1]; ++j) {
+							int start = nn_ptr[i];
+							int end = nn_ptr[i + 1];
+							for (int j = start; j < end; ++j) {
 								int col = nn_idx[j];
-								if (calc_cov_factor) {
-									B_cluster_i.coeffRef(i, col) = h_B_data[j];
-								}
+								if (calc_cov_factor) B_cluster_i.insertBack(i, col) = h_B_data[j];
 								if (calc_gradient) {
 									for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-										B_grad_cluster_i[ipar].coeffRef(i, col) = h_B_grad_data[ipar * total_nnz + j];
+										B_grad_cluster_i[ipar].insertBack(i, col) = h_B_grad_data[ipar * total_nnz + j];
 									}
 								}
 							}
-							if (calc_cov_factor) {
-								D_inv_cluster_i.coeffRef(i, i) = h_D_inv_data[i];
-							}
+							if (calc_cov_factor) D_inv_cluster_i.insertBack(i, i) = h_D_inv_data[i];
 							if (calc_gradient) {
 								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-									D_grad_cluster_i[ipar].coeffRef(i, i) = h_D_grad_data[ipar * num_re_cluster_i + i];
+									D_grad_cluster_i[ipar].insertBack(i, i) = h_D_grad_data[ipar * num_re_cluster_i + i];
 								}
+							}
+						}
+
+						// --- Step 4: Finalize matrices ---
+						if (calc_cov_factor) B_cluster_i.finalize();
+						if (calc_gradient) {
+							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
+								B_grad_cluster_i[ipar].finalize();
+								D_grad_cluster_i[ipar].finalize();
 							}
 						}
 					}
