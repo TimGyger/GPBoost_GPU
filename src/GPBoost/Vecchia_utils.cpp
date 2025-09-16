@@ -1346,25 +1346,18 @@ namespace GPBoost {
 						Log::REInfo("Computation3 = %g ", el_time);
 						std::this_thread::sleep_for(std::chrono::milliseconds(200));
 						// Now build sparse matrices on host
-						// --- Prepare triplets for B_cluster_i ---
+						// Prepare triplets
 						std::vector<Eigen::Triplet<double>> triplets_B;
+						std::vector<Eigen::Triplet<double>> triplets_D;
+						std::vector<std::vector<Eigen::Triplet<double>>> triplets_B_grad(num_par_gp);
+						std::vector<std::vector<Eigen::Triplet<double>>> triplets_D_grad(num_par_gp);
+
 						if (calc_cov_factor) triplets_B.reserve(total_nnz);
-
-						// --- Prepare triplets for B_grad_cluster_i ---
-						std::vector<Eigen::Triplet<double>> triplets_B_grad[num_par_gp];
 						if (calc_gradient) {
-							for (int ipar = 0; ipar < num_par_gp; ++ipar)
+							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
 								triplets_B_grad[ipar].reserve(total_nnz);
-						}
-
-						// --- Prepare diagonal triplets for D_inv_cluster_i and D_grad_cluster_i ---
-						std::vector<Eigen::Triplet<double>> triplets_D_inv;
-						if (calc_cov_factor) triplets_D_inv.reserve(num_re_cluster_i);
-
-						std::vector<Eigen::Triplet<double>> triplets_D_grad[num_par_gp];
-						if (calc_gradient) {
-							for (int ipar = 0; ipar < num_par_gp; ++ipar)
 								triplets_D_grad[ipar].reserve(num_re_cluster_i);
+							}
 						}
 
 						// --- Fill triplets ---
@@ -1380,9 +1373,8 @@ namespace GPBoost {
 									}
 								}
 							}
-
 							if (calc_cov_factor) {
-								triplets_D_inv.emplace_back(i, i, h_D_inv_data[i]);
+								triplets_D.emplace_back(i, i, h_D_inv_data[i]);
 							}
 							if (calc_gradient) {
 								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
@@ -1391,12 +1383,10 @@ namespace GPBoost {
 							}
 						}
 
-						// --- Build sparse matrices ---
+						// Now build Eigen sparse matrices
 						if (calc_cov_factor) {
 							B_cluster_i.setFromTriplets(triplets_B.begin(), triplets_B.end());
-							D_inv_cluster_i.setFromTriplets(triplets_D_inv.begin(), triplets_D_inv.end());
 						}
-
 						if (calc_gradient) {
 							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
 								B_grad_cluster_i[ipar].setFromTriplets(triplets_B_grad[ipar].begin(), triplets_B_grad[ipar].end());
