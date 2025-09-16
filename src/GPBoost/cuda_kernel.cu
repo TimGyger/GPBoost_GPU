@@ -7,6 +7,7 @@
 * Licensed under the Apache License Version 2.0. See LICENSE file in the project root for license information.
 */
 #ifdef USE_CUDA_GP
+#include <cstdio>
 #include <math.h>
 #include <GPBoost/GP_utils.h>
 #include <cuda_runtime.h>
@@ -420,6 +421,11 @@ namespace GPBoost {
         bool exclude_marg_var_grad,
         bool ard,
         const double EPSILON_NUMBERS) {
+
+        if (i < 10) {
+            printf("Thread %d", i);
+        }
+
         // berechne blocks/threads
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
@@ -442,11 +448,13 @@ namespace GPBoost {
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock, shmem_size >> > (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_inv_data,B_grad_data,
             D_grad_data,   pars,num_par,num_par_gp,gauss_likelihood,transf_scale,calc_cov_factor,calc_gradient,calc_gradient_nugget,exclude_marg_var_grad,ard,EPSILON_NUMBERS);
 
-        // optional: synchronisieren und Fehlercheck
+       // optional: synchronisieren und Fehlercheck
         cudaError_t err = cudaDeviceSynchronize();
         if (err != cudaSuccess) {
+            printf("CUDA kernel launch error: %s\n", cudaGetErrorString(err));
             return false;
         }
+        cudaDeviceSynchronize();
         return true;
     }
 
