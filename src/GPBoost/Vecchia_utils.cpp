@@ -1341,6 +1341,10 @@ namespace GPBoost {
 							for (int ipar = 0; ipar < num_par_gp; ++ipar)
 								B_grad_cluster_i[ipar].reserve(total_nnz);
 						}
+						end = std::chrono::steady_clock::now();//only for debugging
+						el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+						Log::REInfo("Computation3 = %g ", el_time);
+						std::this_thread::sleep_for(std::chrono::milliseconds(200));
 						// Now build sparse matrices on host
 						for (int i = 0; i < num_re_cluster_i; ++i) {
 							for (int j = nn_ptr[i]; j < nn_ptr[i + 1]; ++j) {
@@ -1363,15 +1367,27 @@ namespace GPBoost {
 								}
 							}
 						}
+						end = std::chrono::steady_clock::now();//only for debugging
+						el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+						Log::REInfo("Computation4 = %g ", el_time);
+						std::this_thread::sleep_for(std::chrono::milliseconds(200));
 						if (calc_cov_factor) {
 							B_cluster_i.makeCompressed();
 						}
+						end = std::chrono::steady_clock::now();//only for debugging
+						el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+						Log::REInfo("Computation5 = %g ", el_time);
+						std::this_thread::sleep_for(std::chrono::milliseconds(200));
 						if (calc_gradient) {
 							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
 								B_grad_cluster_i[ipar].makeCompressed();
 								D_grad_cluster_i[ipar].makeCompressed();
 							}
 						}
+						end = std::chrono::steady_clock::now();//only for debugging
+						el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+						Log::REInfo("Computation6 = %g ", el_time);
+						std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					}
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
