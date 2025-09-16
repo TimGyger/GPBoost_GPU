@@ -18,6 +18,368 @@ using LightGBM::Log;
 
 namespace GPBoost {
 
+    // compute squared Euclidean distance between two points in d dims
+    __forceinline__ __device__ inline double squared_distance(const double* __restrict__ a, const double* __restrict__ b, int d) {
+        double s = 0.0;
+        for (int k = 0; k < d; ++k) {
+            double t = a[k] - b[k];
+            s += t * t; 
+        }
+        return s;
+    }
+
+    __forceinline__ __device__ double Matern_GPU(const double* __restrict__ pars, 
+        double d, 
+        const double shape, 
+        bool ard,
+        double EPSILON_NUMBERS) {
+        // Safety for zero distance
+        double var = pars[0];
+        double range;
+        if (ard) {
+            range = 1.;
+        }
+        else {
+            range = pars[1];
+        }
+        if (d < EPSILON_NUMBERS) return var;
+        double range_dist = range * d;
+        if (shape == 0.5) {
+            return var *  exp(-range_dist);
+        }
+        else if (shape == 1.5) {
+            return var * (1. + range_dist) * exp(-range_dist);
+        }
+        else if (shape == 2.5) {
+            return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
+        }
+        else {
+            return 0.0;
+        }
+    }
+
+    __forceinline__ __device__ inline double GradientRangeMatern_GPU(const double* __restrict__ a, 
+        const double* __restrict__ b, 
+        const double* __restrict__ pars,
+        double d, 
+        const double C, 
+        const double shape, 
+        const int par, 
+        bool ard,
+        double EPSILON_NUMBERS) {
+        double range;
+        if (ard) {
+            range = 1.;
+        }
+        else {
+            range = pars[1];
+        }
+        // Safety for zero distance
+        if (d < EPSILON_NUMBERS) return 0.0;
+        double range_dist = range * d;
+        if (ard) {
+            double dist_par = a[par - 1] - b[par - 1];
+            if (dist_par < EPSILON_NUMBERS) return 0.0;
+            dist_par = dist_par * dist_par;
+            if (shape == 0.5) {
+                return C * dist_par / d * exp(-range_dist);
+            }
+            else if (shape == 1.5) {
+                return C * dist_par * exp(-d);
+            }
+            else if (shape == 2.5) {
+                return C * dist_par * (1 + d) * exp(-d);
+            }
+            else {
+                return 0.0;
+            }
+        }
+        else {
+            if (shape == 0.5) {
+                return C * d * exp(-range_dist);
+            }
+            else if (shape == 1.5) {
+                return C * d * d * exp(-range_dist);
+            }
+            else if (shape == 2.5) {
+                return C / 3. * d * d * (1. + range_dist) * exp(-range_dist);
+            }
+            else {
+                return 0.0;
+            }
+        }
+    }
+
+    __forceinline__ __device__
+        void forward_solve(const double* __restrict__ L,
+            const double* __restrict__ b,
+            double* __restrict__ y, int k) {
+        for (int i = 0; i < k; ++i) {
+            double s = 0.0;
+            for (int j = 0; j < i; ++j) s += L[i * k + j] * y[j];
+            y[i] = (b[i] - s) / L[i * k + i];
+        }
+    }
+
+    __forceinline__ __device__
+        void back_solve_lt(const double* __restrict__ L,
+            const double* __restrict__ y,
+            double* __restrict__ x, int k) {
+        for (int i = k - 1; i >= 0; --i) {
+            double s = 0.0;
+            for (int j = i + 1; j < k; ++j) s += L[j * k + i] * x[j];
+            x[i] = (y[i] - s) / L[i * k + i];
+        }
+    }
+
+    __forceinline__ __device__
+        bool chol_small(double* __restrict__ L, const double* __restrict__ A,
+            int k,
+            const double EPSILON_NUMBERS) {
+        // L lower; A symmetric
+        // Copy A -> L
+        for (int i = 0; i < k * k; ++i) L[i] = A[i];
+
+        for (int r = 0; r < k; ++r) {
+            double sum = 0.0;
+            for (int t = 0; t < r; ++t) {
+                double Lrt = L[r * k + t];
+                sum += Lrt * Lrt;
+            }
+            double diag = L[r * k + r] - sum;
+            if (diag <= EPSILON_NUMBERS) return false;
+            double Lrr = sqrt(diag);
+            L[r * k + r] = Lrr;
+
+            for (int row = r + 1; row < k; ++row) {
+                double ssum = 0.0;
+                for (int t = 0; t < r; ++t) ssum += L[row * k + t] * L[r * k + t];
+                double val = (L[row * k + r] - ssum) / Lrr;
+                L[row * k + r] = val;
+            }
+            // zero out strictly upper (optional)
+            for (int c = r + 1; c < k; ++c) L[r * k + c] = 0.0;
+        }
+        return true;
+    }
+
+    __global__ void CalcCovFactorGradientVecchia_GPU(
+        const int num_neighbors,
+        const double shape,                 // smoothness param
+        const double C,                     // range param
+        const int n,                        // number of data points
+        const int dim_coords,               // coordinate dimension
+        const double* __restrict__ coords,  // n * dim_coords, row-major (coords[i*dim + d])
+        const int* __restrict__ nn_ptr,     // length n+1  (nn_ptr[i+1]-nn_ptr[i] == k_i)
+        const int* __restrict__ nn_idx,     // flattened neighbor indices
+        const double jitter,                // e.g. 1e-8
+        const double nugget_var,            // e.g. 1e-8
+        double* __restrict__ B_data,        // flattened B rows: length == nn_ptr[n] (space preallocated)
+        double* __restrict__ D_inv_data,    // length n
+        double* __restrict__ B_grad_data,   // length = num_params * total_nnz
+        double* __restrict__ D_grad_data,   // length = num_params * n
+        const double* __restrict__ pars,
+        const int num_par,
+        const int num_par_gp,
+        bool gauss_likelihood,
+        bool transf_scale,
+        bool calc_cov_factor,
+        bool calc_gradient,
+        bool calc_gradient_nugget,
+        bool exclude_marg_var_grad,
+        bool ard,
+        const double EPSILON_NUMBERS
+    ) {
+        int i = blockIdx.x * blockDim.x + threadIdx.x;
+        if (i >= n) return;
+
+        int start = nn_ptr[i];
+        int end = nn_ptr[i + 1];
+        int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
+        int k = end - start;
+        if (k > num_neighbors) {
+            return;
+        }
+
+        // local buffers in thread (stack/reg) - small
+        double cov_mat_between_neighbors[k * k]; // store full k x k symmetric matrix
+        double cov_grad_mats_between_neighbors[num_par_gp * k * k]; // store num_par full k x k symmetric matrix
+        double cov_mat_obs_neighbors[k];            // Sigma_{iN} as row (we'll use it as column in solves)
+        double cov_grad_mats_obs_neighbors[num_par_gp * k];            // Sigma_grad_{iN} as row (we'll use it as column in solves)
+        double L[k * k];     // lower-triangular Cholesky factor (row-major storage, L[row,kcol])
+        double y[k];
+        double A_i[k];
+        double A_i_grad_sigma2[k];
+        double A_i_grad[k];
+
+        // pointers
+        const double* xi = coords + ((size_t)i) * dim_coords;
+        if (i > 0) {
+            // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
+            for (int jj = 0; jj < k; ++jj) {
+                int nj = nn_idx[start + jj];
+                const double* xj = coords + ((size_t)nj) * dim_coords;
+                double r = sqrt(squared_distance(xi, xj, dim_coords));
+                cov_mat_obs_neighbors[jj] = Matern_GPU(pars, r, shape, ard, EPSILON_NUMBERS);
+                if (calc_gradient) {
+                    cov_grad_mats_obs_neighbors[0 * k + jj] = cov_mat_obs_neighbors[jj];
+                    if (!transf_scale) {
+                        cov_grad_mats_obs_neighbors[0 * k + jj] /= pars[0];
+                    }
+                    for (int ipar = 1; ipar < num_par; ++ipar) {
+                        cov_grad_mats_obs_neighbors[ipar * k + jj] = GradientRangeMatern_GPU(xi, xj, pars, r, C, shape, ipar, ard, EPSILON_NUMBERS);
+                    }
+                }
+            }
+
+            // compute Sigma_nn (symmetric)
+            for (int p = 0; p < k; ++p) {
+                for (int q = 0; q <= p; ++q) {
+                    int idx_p = nn_idx[start + p];
+                    int idx_q = nn_idx[start + q];
+                    const double* xp = coords + ((size_t)idx_p) * dim_coords;
+                    const double* xq = coords + ((size_t)idx_q) * dim_coords;
+                    double r = sqrt(squared_distance(xp, xq, dim_coords));
+                    double val = Matern_GPU(pars, r, shape, ard, EPSILON_NUMBERS);
+                    cov_mat_between_neighbors[p * k + q] = val;
+                    cov_mat_between_neighbors[q * k + p] = val;
+                    if (calc_gradient) {
+                        cov_grad_mats_between_neighbors[0 * k * k + p * k + q] = val;
+                        cov_grad_mats_between_neighbors[0 * k * k + q * k + p] = val;
+                        if (!transf_scale) {
+                            cov_grad_mats_between_neighbors[0 * k * k + p * k + q] /= pars[0];
+                            cov_grad_mats_between_neighbors[0 * k * k + q * k + p] /= pars[0];
+                        }
+                        for (int ipar = 1; ipar < num_par; ++ipar) {
+                            cov_grad_mats_between_neighbors[ipar * k * k + p * k + q] = GradientRangeMatern_GPU(xp, xq, pars, r, C, shape, ipar, ard, EPSILON_NUMBERS);
+                            if (p != q) {
+                                cov_grad_mats_between_neighbors[ipar * k * k + q * k + p] = cov_grad_mats_between_neighbors[ipar * k * k + p * k + q];
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (gauss_likelihood) {
+                if (transf_scale) {
+                    for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] += 1;
+                }
+                else {
+                    for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] += nugget_var;
+                }
+            }
+            else {
+                for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] *= jitter;
+            }
+        }
+        double Sigma_ii = pars[0];
+        double Sigma_grad_ii;
+        if (!transf_scale && gauss_likelihood) {
+            Sigma_ii *= nugget_var;
+        }
+        if (calc_gradient) {
+            if (transf_scale) {
+                Sigma_grad_ii = Sigma_ii;
+            }
+            else {
+                Sigma_grad_ii = 1.;
+            }
+            if (!exclude_marg_var_grad) {
+                D_grad_data[i] = Sigma_grad_ii;
+            }
+            if (calc_gradient_nugget) {
+                D_grad_data[num_par_gp - 1 + i] = 1.;
+            }
+        }
+        if (i > 0) {
+            // --- Cholesky: compute L such that Sigma = L * L^T
+            // L stored in row-major: L[row*k + col], valid for col <= row
+            if (!chol_small(L, cov_mat_between_neighbors, k, EPSILON_NUMBERS)) {
+                return;
+            }
+
+            // --- Solve L * y = s^T  (forward substitution)
+            forward_solve(L, cov_mat_obs_neighbors, y, k);
+
+            // --- Solve L^T * A_i = y  (back substitution)
+            back_solve_lt(L, y, A_i, k);
+            if (calc_gradient) {
+                if (calc_gradient_nugget) {
+                    // --- Solve L * y = s^T  (forward substitution)
+                    forward_solve(L, A_i, y, k);
+
+                    // --- Solve L^T * A_i_grad_sigma2 = y  (back substitution)
+                    back_solve_lt(L, y, A_i_grad_sigma2, k);
+                }
+                for (int ipar = 0; ipar < num_par; ++ipar) {
+                    if (!exclude_marg_var_grad) {
+                        // --- Solve L * y = s^T  (forward substitution)
+                        const double* rhs = cov_grad_mats_obs_neighbors + ipar * k;
+                        forward_solve(L, rhs, y, k);
+                        // --- Solve L^T * A_i_grad = y  (back substitution)
+                        back_solve_lt(L, y, A_i_grad, k);
+                        double z[k];
+                        for (int j = 0; j < k; ++j) {
+                            double mult = 0.0;
+                            for (int jj = 0; jj < k; ++jj) {
+                                mult += A_i[jj] * cov_grad_mats_between_neighbors[ipar * k * k + j * k + jj];
+                            }
+                            z[j] = mult;
+                        }
+                        // --- Solve L * y = z^T  (forward substitution)
+                        forward_solve(L, z, y, k);
+                        // --- Solve L^T * z = y  (back substitution)
+                        back_solve_lt(L, y, z, k);
+                        for (int j = 0; j < k; ++j) {
+                            A_i_grad[j] -= z[j];
+                        }
+                        for (int j = 0; j < k; ++j) {
+                            B_grad_data[ipar * total_nnz + start + j] = -A_i_grad[j];
+                        }
+                        double dot_grad_1 = 0.0;
+                        double dot_grad_2 = 0.0;
+                        for (int j = 0; j < k; ++j) {
+                            dot_grad_1 += cov_grad_mats_obs_neighbors[ipar * k + j] * A_i[j];
+                            dot_grad_2 += cov_mat_obs_neighbors[j] * A_i_grad[j];
+                        }
+                        if (ipar == 0) {
+                            D_grad_data[ipar * n + i] -= dot_grad_1 + dot_grad_2;
+                        }
+                        else {
+                            D_grad_data[ipar * n + i] = -dot_grad_1 - dot_grad_2;
+                        }
+                    }
+                }
+                if (calc_gradient_nugget) {
+                    for (int j = 0; j < k; ++j) {
+                        B_grad_data[num_par_gp - 1 + start + j] = -A_i_grad_sigma2[j];
+                    }
+                    double dot_grad = 0.0;
+                    for (int j = 0; j < k; ++j) dot_grad += cov_mat_obs_neighbors[j] * A_i_grad_sigma2[j];
+                    D_grad_data[num_par_gp - 1 + i] -= dot_grad;
+                }
+            }
+        }
+
+
+        // Now A_i = Sigma_nn^{-1} * s^T (k x 1)
+        // B_i (1 x k) = (s * Sigma_nn^{-1}) = (A_i)^T  (because Sigma is symmetric)
+        // store B at B_data[start + j] = -A_i[j]
+        if (calc_cov_factor) {
+            for (int j = 0; j < k; ++j) {
+                B_data[start + j] = -A_i[j];
+            }
+        }
+        // Compute D_i = Sigma_ii - s * A_i
+        double dot = 0.0;
+        for (int j = 0; j < k; ++j) dot += cov_mat_obs_neighbors[j] * A_i[j];
+        double D_i = Sigma_ii - dot;
+        if (calc_cov_factor) {
+            D_inv_data[i] = 1.0 / D_i;
+        }
+    }
+
+
     bool try_matmul_gpu(const den_mat_t& A, const den_mat_t& B, den_mat_t& C) {
         int M = A.rows(), K = A.cols(), N = B.cols();
         if (K != B.rows()) {
