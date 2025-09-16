@@ -1245,6 +1245,7 @@ namespace GPBoost {
 				if (GPU_success) {
 #ifdef USE_CUDA_GP
 					int total_nnz = B_cluster_i.nonZeros();
+					int num_nn_max = (int)nearest_neighbors_cluster_i[num_re_cluster_i - 1].size();
 					// Flattened arrays on device
 					double* d_B_data;
 					double* d_D_inv_data;
@@ -1296,7 +1297,7 @@ namespace GPBoost {
 					cudaMalloc(&d_nn_idx, nn_idx.size() * sizeof(int));
 					cudaMemcpy(d_nn_idx, nn_idx.data(), nn_idx.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
+					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(num_nn_max, cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
 						d_coords, d_nn_ptr, d_nn_idx, JITTER_MULT_VECCHIA, nugget_var,
 						d_B_data, d_D_inv_data, d_B_grad_data, d_D_grad_data,
 						d_pars, num_par_comp, num_par_gp, gauss_likelihood, transf_scale,
@@ -1312,10 +1313,10 @@ namespace GPBoost {
 					std::vector<double> h_D_grad_data(num_par_gp* num_re_cluster_i);
 
 					// Copy device arrays back to host if needed
-					cudaMemcpy(h_B_data, d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_inv_data, d_D_inv_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_B_grad_data, d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_grad_data, d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					cudaMemcpy(h_B_data.data(), d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
+					cudaMemcpy(h_D_inv_data.data(), d_D_inv_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					cudaMemcpy(h_B_grad_data.data(), d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
+					cudaMemcpy(h_D_grad_data.data(), d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
 					
 					if (GPU_success) {
 						if (calc_cov_factor) {

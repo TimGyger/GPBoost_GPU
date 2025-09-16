@@ -194,16 +194,35 @@ namespace GPBoost {
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
         int k = end - start;
 
-        // local buffers in thread (stack/reg) - small
-        double cov_mat_between_neighbors[k * k]; // store full k x k symmetric matrix
-        double cov_grad_mats_between_neighbors[num_par_gp * k * k]; // store num_par full k x k symmetric matrix
-        double cov_mat_obs_neighbors[k];            // Sigma_{iN} as row (we'll use it as column in solves)
-        double cov_grad_mats_obs_neighbors[num_par_gp * k];            // Sigma_grad_{iN} as row (we'll use it as column in solves)
-        double L[k * k];     // lower-triangular Cholesky factor (row-major storage, L[row,kcol])
-        double y[k];
-        double A_i[k];
-        double A_i_grad_sigma2[k];
-        double A_i_grad[k];
+        extern __shared__ double shmem[];
+        int offset = 0;
+
+        double* cov_mat_between_neighbors = shmem + offset;
+        offset += k * k;
+
+        double* cov_grad_mats_between_neighbors = shmem + offset;
+        offset += num_par_gp * k * k;
+
+        double* cov_mat_obs_neighbors = shmem + offset;
+        offset += k;
+
+        double* cov_grad_mats_obs_neighbors = shmem + offset;
+        offset += num_par_gp * k;
+
+        double* L = shmem + offset;
+        offset += k * k;
+
+        double* y = shmem + offset;
+        offset += k;
+
+        double* A_i = shmem + offset;
+        offset += k;
+
+        double* A_i_grad_sigma2 = shmem + offset;
+        offset += k;
+
+        double* A_i_grad = shmem + offset;
+        offset += k;
 
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
@@ -373,6 +392,7 @@ namespace GPBoost {
     }
 
     bool LaunchCalcCovFactorGradientVecchia_GPU(
+        const int num_neighbors,
         const double shape,                 // smoothness param
         const double C,                     // range param
         const int n,                        // number of data points
@@ -401,8 +421,21 @@ namespace GPBoost {
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
+        int k_max = num_neighbors;  
+        size_t shmem_size = threadsPerBlock * (
+            k_max * k_max +                  // cov_mat_between_neighbors
+            num_par_gp * k_max * k_max +     // cov_grad_mats_between_neighbors
+            k_max +                          // cov_mat_obs_neighbors
+            num_par_gp * k_max +             // cov_grad_mats_obs_neighbors
+            k_max * k_max +                  // L
+            k_max +                          // y
+            k_max +                          // A_i
+            k_max +                          // A_i_grad_sigma2
+            k_max                             // A_i_grad
+            ) * sizeof(double);
+
         // kernel starten
-        CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_inv_data,B_grad_data,
+        CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock, shmem_size >> > (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_inv_data,B_grad_data,
             D_grad_data,   pars,num_par,num_par_gp,gauss_likelihood,transf_scale,calc_cov_factor,calc_gradient,calc_gradient_nugget,exclude_marg_var_grad,ard,EPSILON_NUMBERS);
 
         // optional: synchronisieren und Fehlercheck
