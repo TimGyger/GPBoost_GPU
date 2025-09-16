@@ -7,6 +7,7 @@
 * Licensed under the Apache License Version 2.0. See LICENSE file in the project root for license information.
 */
 #ifdef USE_CUDA_GP
+#include <math.h>
 #include <GPBoost/GP_utils.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
@@ -215,6 +216,9 @@ namespace GPBoost {
         double* y = shmem + offset;
         offset += k;
 
+        double* z = shmem + offset;
+        offset += k;
+
         double* A_i = shmem + offset;
         offset += k;
 
@@ -330,7 +334,6 @@ namespace GPBoost {
                         forward_solve(L, rhs, y, k);
                         // --- Solve L^T * A_i_grad = y  (back substitution)
                         back_solve_lt(L, y, A_i_grad, k);
-                        double z[k];
                         for (int j = 0; j < k; ++j) {
                             double mult = 0.0;
                             for (int jj = 0; jj < k; ++jj) {
@@ -429,6 +432,7 @@ namespace GPBoost {
             num_par_gp * k_max +             // cov_grad_mats_obs_neighbors
             k_max * k_max +                  // L
             k_max +                          // y
+            k_max +                          // z
             k_max +                          // A_i
             k_max +                          // A_i_grad_sigma2
             k_max                             // A_i_grad
@@ -582,8 +586,6 @@ namespace GPBoost {
     bool try_spmatmul_gpu(const sp_mat_rm_t& A, const sp_mat_rm_t& B, sp_mat_rm_t& C) {
         if (A.cols() != B.rows()) return false;
 
-        cudaError_t cuda_stat;
-        cusparseStatus_t cusparse_stat;
         cusparseHandle_t handle = nullptr;
         cusparseSpMatDescr_t matA = nullptr, matB = nullptr, matC = nullptr;
         cusparseSpGEMMDescr_t spgemmDescr = nullptr;
