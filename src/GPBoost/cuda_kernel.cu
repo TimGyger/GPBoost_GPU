@@ -190,6 +190,9 @@ namespace GPBoost {
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
+        if (i < 10) {
+            printf("Thread %d", i);
+        }
 
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
@@ -231,6 +234,9 @@ namespace GPBoost {
 
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
+        if (i < 10) {
+            printf("Thread1 %d", i);
+        }
         if (i > 0) {
             // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
             for (int jj = 0; jj < k; ++jj) {
@@ -248,7 +254,9 @@ namespace GPBoost {
                     }
                 }
             }
-
+            if (i < 10) {
+                printf("Thread2 %d", i);
+            }
             // compute Sigma_nn (symmetric)
             for (int p = 0; p < k; ++p) {
                 for (int q = 0; q <= p; ++q) {
@@ -276,7 +284,9 @@ namespace GPBoost {
                     }
                 }
             }
-
+            if (i < 10) {
+                printf("Thread3 %d", i);
+            }
             if (gauss_likelihood) {
                 if (transf_scale) {
                     for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] += 1;
@@ -422,10 +432,7 @@ namespace GPBoost {
         bool ard,
         const double EPSILON_NUMBERS) {
 
-        if (i < 10) {
-            printf("Thread %d", i);
-        }
-
+        
         // berechne blocks/threads
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
