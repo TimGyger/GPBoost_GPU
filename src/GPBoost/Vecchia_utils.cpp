@@ -1284,7 +1284,7 @@ namespace GPBoost {
 					std::vector<int> nn_idx(total_nnz, 0);
 					// fill nn_ptr and nn_idx from nearest_neighbors_cluster_i
 					int idx = 0;
-					for (int i = 0; i < nearest_neighbors_cluster_i.size(); ++i) {
+					for (int i = 0; i < (int)nearest_neighbors_cluster_i.size(); ++i) {
 						nn_ptr[i + 1] = nn_ptr[i] + nearest_neighbors_cluster_i[i].size();
 						for (int j : nearest_neighbors_cluster_i[i]) {
 							nn_idx[idx++] = j;
@@ -1296,8 +1296,8 @@ namespace GPBoost {
 					cudaMalloc(&d_nn_idx, nn_idx.size() * sizeof(int));
 					cudaMemcpy(d_nn_idx, nn_idx.data(), nn_idx.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(num_neighbors, cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
-						d_coords, d_nn_ptr, d_nn_idx, jitter, nugget_var,
+					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
+						d_coords, d_nn_ptr, d_nn_idx, JITTER_MULT_VECCHIA, nugget_var,
 						d_B_data, d_D_inv_data, d_B_grad_data, d_D_grad_data,
 						d_pars, num_par_comp, num_par_gp, gauss_likelihood, transf_scale,
 						calc_cov_factor, calc_gradient, calc_gradient_nugget,
@@ -1305,6 +1305,11 @@ namespace GPBoost {
 
 
 					cudaDeviceSynchronize();
+
+					std::vector<double> h_B_data(total_nnz);
+					std::vector<double> h_D_inv_data(num_re_cluster_i);
+					std::vector<double> h_B_grad_data(num_par_gp* total_nnz);
+					std::vector<double> h_D_grad_data(num_par_gp* num_re_cluster_i);
 
 					// Copy device arrays back to host if needed
 					cudaMemcpy(h_B_data, d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);

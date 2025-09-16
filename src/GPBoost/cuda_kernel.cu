@@ -19,7 +19,7 @@ using LightGBM::Log;
 namespace GPBoost {
 
     // compute squared Euclidean distance between two points in d dims
-    __forceinline__ __device__ inline double squared_distance(const double* __restrict__ a, const double* __restrict__ b, int d) {
+    __device__ double squared_distance(const double* __restrict__ a, const double* __restrict__ b, int d) {
         double s = 0.0;
         for (int k = 0; k < d; ++k) {
             double t = a[k] - b[k];
@@ -28,7 +28,7 @@ namespace GPBoost {
         return s;
     }
 
-    __forceinline__ __device__ double Matern_GPU(const double* __restrict__ pars, 
+    __device__ double Matern_GPU(const double* __restrict__ pars, 
         double d, 
         const double shape, 
         bool ard,
@@ -58,7 +58,7 @@ namespace GPBoost {
         }
     }
 
-    __forceinline__ __device__ inline double GradientRangeMatern_GPU(const double* __restrict__ a, 
+    __device__ double GradientRangeMatern_GPU(const double* __restrict__ a, 
         const double* __restrict__ b, 
         const double* __restrict__ pars,
         double d, 
@@ -110,8 +110,7 @@ namespace GPBoost {
         }
     }
 
-    __forceinline__ __device__
-        void forward_solve(const double* __restrict__ L,
+    __device__ void forward_solve(const double* __restrict__ L,
             const double* __restrict__ b,
             double* __restrict__ y, int k) {
         for (int i = 0; i < k; ++i) {
@@ -121,8 +120,7 @@ namespace GPBoost {
         }
     }
 
-    __forceinline__ __device__
-        void back_solve_lt(const double* __restrict__ L,
+    __device__ void back_solve_lt(const double* __restrict__ L,
             const double* __restrict__ y,
             double* __restrict__ x, int k) {
         for (int i = k - 1; i >= 0; --i) {
@@ -132,8 +130,7 @@ namespace GPBoost {
         }
     }
 
-    __forceinline__ __device__
-        bool chol_small(double* __restrict__ L, const double* __restrict__ A,
+    __device__ bool chol_small(double* __restrict__ L, const double* __restrict__ A,
             int k,
             const double EPSILON_NUMBERS) {
         // L lower; A symmetric
@@ -164,7 +161,6 @@ namespace GPBoost {
     }
 
     __global__ void CalcCovFactorGradientVecchia_GPU(
-        const int num_neighbors,
         const double shape,                 // smoothness param
         const double C,                     // range param
         const int n,                        // number of data points
@@ -197,9 +193,6 @@ namespace GPBoost {
         int end = nn_ptr[i + 1];
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
         int k = end - start;
-        if (k > num_neighbors) {
-            return;
-        }
 
         // local buffers in thread (stack/reg) - small
         double cov_mat_between_neighbors[k * k]; // store full k x k symmetric matrix
@@ -380,7 +373,6 @@ namespace GPBoost {
     }
 
     bool LaunchCalcCovFactorGradientVecchia_GPU(
-        const int num_neighbors,
         const double shape,                 // smoothness param
         const double C,                     // range param
         const int n,                        // number of data points
@@ -410,7 +402,7 @@ namespace GPBoost {
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
         // kernel starten
-        CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (num_neighbors,shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_inv_data,B_grad_data,
+        CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_inv_data,B_grad_data,
             D_grad_data,   pars,num_par,num_par_gp,gauss_likelihood,transf_scale,calc_cov_factor,calc_gradient,calc_gradient_nugget,exclude_marg_var_grad,ard,EPSILON_NUMBERS);
 
         // optional: synchronisieren und Fehlercheck
