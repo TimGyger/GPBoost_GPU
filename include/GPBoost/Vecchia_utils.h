@@ -33,7 +33,7 @@ namespace GPBoost {
 		const double jitter,                // e.g. 1e-8
 		const double nugget_var,            // e.g. 1e-8
 		double* __restrict__ B_data,        // flattened B rows: length == nn_ptr[n] (space preallocated)
-		double* __restrict__ D_inv_data,    // length n
+		double* __restrict__ D_data,    // length n
 		double* __restrict__ B_grad_data,   // length = num_params * total_nnz
 		double* __restrict__ D_grad_data,   // length = num_params * n
 		const double* __restrict__ pars,
