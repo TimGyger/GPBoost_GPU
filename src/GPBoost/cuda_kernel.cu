@@ -254,8 +254,8 @@ namespace GPBoost {
                     }
                 }
             }
-            if (i == 10) {
-                printf("Thread2 %d %g %g\n", i, cov_mat_obs_neighbors[0], cov_mat_obs_neighbors[1]); fflush(stdout);
+            if (i < 10) {
+                printf("Thread2 %d", i);
             }
             // compute Sigma_nn (symmetric)
             for (int p = 0; p < k; ++p) {
