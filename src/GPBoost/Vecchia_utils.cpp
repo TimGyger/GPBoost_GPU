@@ -1312,7 +1312,6 @@ namespace GPBoost {
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 					Log::REInfo("Computation = %g ", el_time);
-					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					//cudaDeviceSynchronize();
 
 					std::vector<double> h_B_data(total_nnz);
@@ -1328,7 +1327,6 @@ namespace GPBoost {
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 					Log::REInfo("Computation1 = %g ", el_time);
-					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					if (GPU_success) {
 #pragma omp parallel for
 						for (int i = 0; i < num_re_cluster_i; ++i) {
@@ -1365,7 +1363,6 @@ namespace GPBoost {
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 					Log::REInfo("Computation2 = %g ", el_time);
-					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					cudaFree(d_B_data);
 					cudaFree(d_B_grad_data);
 					cudaFree(d_D_inv_data);
@@ -1383,7 +1380,6 @@ namespace GPBoost {
 				end = std::chrono::steady_clock::now();//only for debugging
 				el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 				Log::REInfo("Computation3 = %g ", el_time);
-				std::this_thread::sleep_for(std::chrono::milliseconds(200));
 			}
 			if (!GPU_success) {
 				Log::REInfo("CalcCovFactorGradientVecchia for this covariance function is not implemented for GPU.");
