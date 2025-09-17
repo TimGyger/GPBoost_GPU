@@ -192,7 +192,10 @@ namespace GPBoost {
         bool calc_gradient_nugget,
         bool exclude_marg_var_grad,
         bool ard,
-        const double EPSILON_NUMBERS
+        const double EPSILON_NUMBERS,
+        double* __restrict__ d_cov_mat_between_neighbors,
+        double* __restrict__ d_cov_grad_mats_between_neighbors,
+        double* __restrict__ d_L
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
@@ -205,16 +208,15 @@ namespace GPBoost {
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
         int k = end - start;
 
-        double cov_mat_between_neighbors[MAX_K * MAX_K];
-        double cov_grad_mats_between_neighbors[MAX_NUM_PAR_GP * MAX_K * MAX_K];
+        // Each thread uses its slice in global memory
+        double* cov_mat_between_neighbors = d_cov_mat_between_neighbors + threadIdx.x * MAX_K * MAX_K;
+        double* cov_grad_mats_between_neighbors = d_cov_grad_mats_between_neighbors + threadIdx.x * MAX_NUM_PAR_GP * MAX_K * MAX_K;
+        double* L = d_L + threadIdx.x * MAX_K * MAX_K;
+
+        // small arrays remain on the stack
         double cov_mat_obs_neighbors[MAX_K];
         double cov_grad_mats_obs_neighbors[MAX_NUM_PAR_GP * MAX_K];
-        double L[MAX_K * MAX_K];
-        double y[MAX_K];
-        double z[MAX_K];
-        double A_i[MAX_K];
-        double A_i_grad_sigma2[MAX_K];
-        double A_i_grad[MAX_K];
+        double y[MAX_K], z[MAX_K], A_i[MAX_K], A_i_grad_sigma2[MAX_K], A_i_grad[MAX_K];
 
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
@@ -420,8 +422,27 @@ namespace GPBoost {
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
         printf("Thread0\n"); fflush(stdout);
         // kernel starten
-        CalcCovFactorGradientVecchia_GPU <<<blocksPerGrid, threadsPerBlock>>> (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_data,B_grad_data,
-            D_grad_data,   pars,num_par,num_par_gp,gauss_likelihood,transf_scale,calc_cov_factor,calc_gradient,calc_gradient_nugget,exclude_marg_var_grad,ard,EPSILON_NUMBERS);
+        // Allocate global memory for slices
+        double* d_cov_mat_between_neighbors;
+        cudaMalloc(&d_cov_mat_between_neighbors, threadsPerBlock * MAX_K * MAX_K * sizeof(double));
+
+        double* d_cov_grad_mats_between_neighbors;
+        cudaMalloc(&d_cov_grad_mats_between_neighbors, threadsPerBlock * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double));
+
+        double* d_L;
+        cudaMalloc(&d_L, threadsPerBlock * MAX_K * MAX_K * sizeof(double));
+
+        CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
+            shape, C, n, dim_coords,
+            coords, nn_ptr, nn_idx,
+            jitter, nugget_var,
+            B_data, D_data, B_grad_data, D_grad_data,
+            pars, num_par, num_par_gp,
+            gauss_likelihood, transf_scale,
+            calc_cov_factor, calc_gradient,
+            calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS,
+            d_cov_mat_between_neighbors, d_cov_grad_mats_between_neighbors, d_L
+            );
         // Check for launch configuration/argument errors
         printf("Thread0\n"); fflush(stdout);
         cudaError_t launchErr = cudaGetLastError();
