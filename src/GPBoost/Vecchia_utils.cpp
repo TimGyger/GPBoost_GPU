@@ -1247,7 +1247,7 @@ namespace GPBoost {
 					int total_nnz = B_cluster_i.nonZeros();
 					// Flattened arrays on device
 					double* d_B_data;
-					double* d_D_inv_data;
+					double* d_D_data;
 					double* d_B_grad_data;
 					double* d_D_grad_data;
 					double* d_coords;  // device pointer to coordinates
@@ -1258,7 +1258,7 @@ namespace GPBoost {
 					// Allocate
 					if (calc_cov_factor) {
 						cudaMalloc(&d_B_data, total_nnz * sizeof(double));
-						cudaMalloc(&d_D_inv_data, num_re_cluster_i * sizeof(double));
+						cudaMalloc(&d_D_data, num_re_cluster_i * sizeof(double));
 					}
 					if (calc_gradient) {
 						cudaMalloc(&d_B_grad_data, num_par_gp * total_nnz * sizeof(double));
@@ -1266,7 +1266,7 @@ namespace GPBoost {
 					}
 					// Copy host arrays to device
 					cudaMemcpy(d_B_data, B_cluster_i.valuePtr(), total_nnz * sizeof(double), cudaMemcpyHostToDevice);
-					cudaMemcpy(d_D_inv_data, D_inv_cluster_i.diagonal().data(), num_re_cluster_i * sizeof(double), cudaMemcpyHostToDevice);
+					cudaMemcpy(d_D_data, D_inv_cluster_i.diagonal().data(), num_re_cluster_i * sizeof(double), cudaMemcpyHostToDevice);
 					if (calc_gradient) {
 						for (int ipar = 0; ipar < num_par_gp; ++ipar) {
 							cudaMemcpy(d_B_grad_data + ipar * total_nnz, B_grad_cluster_i[ipar].valuePtr(), total_nnz * sizeof(double), cudaMemcpyHostToDevice);
@@ -1303,7 +1303,7 @@ namespace GPBoost {
 					Log::REInfo("Preparation time until = %g ", el_time);
 					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
 						d_coords, d_nn_ptr, d_nn_idx, JITTER_MULT_VECCHIA, nugget_var,
-						d_B_data, d_D_inv_data, d_B_grad_data, d_D_grad_data,
+						d_B_data, d_D_data, d_B_grad_data, d_D_grad_data,
 						d_pars, num_par_comp, num_par_gp, gauss_likelihood, transf_scale,
 						calc_cov_factor, calc_gradient, calc_gradient_nugget,
 						exclude_marg_var_grad, ard, EPSILON_NUMBERS);
@@ -1314,13 +1314,13 @@ namespace GPBoost {
 					//cudaDeviceSynchronize();
 
 					std::vector<double> h_B_data(total_nnz);
-					std::vector<double> h_D_inv_data(num_re_cluster_i);
+					std::vector<double> h_D_data(num_re_cluster_i);
 					std::vector<double> h_B_grad_data(num_par_gp* total_nnz);
 					std::vector<double> h_D_grad_data(num_par_gp* num_re_cluster_i);
 
 					// Copy device arrays back to host if needed
 					cudaMemcpy(h_B_data.data(), d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_inv_data.data(), d_D_inv_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					cudaMemcpy(h_D_data.data(), d_D_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
 					cudaMemcpy(h_B_grad_data.data(), d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
 					cudaMemcpy(h_D_grad_data.data(), d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
 					end = std::chrono::steady_clock::now();//only for debugging
@@ -1341,7 +1341,8 @@ namespace GPBoost {
 								}
 							}
 							if (calc_cov_factor) {
-								D_inv_cluster_i.coeffRef(i, i) = h_D_inv_data[i];
+								D_inv_cluster_i.coeffRef(i, i) += h_D_data[i];
+								D_inv_cluster_i.coeffRef(i, i) = 1./ D_inv_cluster_i.coeffRef(i, i);
 							}
 							if (calc_gradient) {
 								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
@@ -1364,7 +1365,7 @@ namespace GPBoost {
 					Log::REInfo("Computation2 = %g ", el_time);
 					cudaFree(d_B_data);
 					cudaFree(d_B_grad_data);
-					cudaFree(d_D_inv_data);
+					cudaFree(d_D_data);
 					cudaFree(d_D_grad_data);
 					cudaFree(d_coords);
 					cudaFree(d_pars);

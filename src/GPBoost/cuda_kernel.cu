@@ -179,7 +179,7 @@ namespace GPBoost {
         const double jitter,                // e.g. 1e-8
         const double nugget_var,            // e.g. 1e-8
         double* __restrict__ B_data,        // flattened B rows: length == nn_ptr[n] (space preallocated)
-        double* __restrict__ D_inv_data,    // length n
+        double* __restrict__ D_data,    // length n
         double* __restrict__ B_grad_data,   // length = num_params * total_nnz
         double* __restrict__ D_grad_data,   // length = num_params * n
         const double* __restrict__ pars,
@@ -383,9 +383,8 @@ namespace GPBoost {
         // Compute D_i = Sigma_ii - s * A_i
         double dot = 0.0;
         for (int j = 0; j < k; ++j) dot += cov_mat_obs_neighbors[j] * A_i[j];
-        double D_i = Sigma_ii - dot;
         if (calc_cov_factor) {
-            D_inv_data[i] = 1.0 / D_i;
+            D_data[i] = Sigma_ii - dot;
         }
     }
 
@@ -400,7 +399,7 @@ namespace GPBoost {
         const double jitter,                // e.g. 1e-8
         const double nugget_var,            // e.g. 1e-8
         double* __restrict__ B_data,        // flattened B rows: length == nn_ptr[n] (space preallocated)
-        double* __restrict__ D_inv_data,    // length n
+        double* __restrict__ D_data,    // length n
         double* __restrict__ B_grad_data,   // length = num_params * total_nnz
         double* __restrict__ D_grad_data,   // length = num_params * n
         const double* __restrict__ pars,
@@ -421,18 +420,18 @@ namespace GPBoost {
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
         printf("Thread0\n"); fflush(stdout);
         // kernel starten
-        CalcCovFactorGradientVecchia_GPU <<<blocksPerGrid, threadsPerBlock>>> (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_inv_data,B_grad_data,
+        CalcCovFactorGradientVecchia_GPU <<<blocksPerGrid, threadsPerBlock>>> (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_data,B_grad_data,
             D_grad_data,   pars,num_par,num_par_gp,gauss_likelihood,transf_scale,calc_cov_factor,calc_gradient,calc_gradient_nugget,exclude_marg_var_grad,ard,EPSILON_NUMBERS);
         // Check for launch configuration/argument errors
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
-            printf("Kernel launch failed: %s\n", cudaGetErrorString(launchErr));
+            printf("Kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
         // Now wait for kernel to finish
         cudaError_t execErr = cudaDeviceSynchronize();
         if (execErr != cudaSuccess) {
-            printf("Kernel execution error: %s\n", cudaGetErrorString(execErr));
+            printf("Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
             return false;
         }
         printf("Thread0\n"); fflush(stdout);
