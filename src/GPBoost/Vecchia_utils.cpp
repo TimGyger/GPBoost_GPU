@@ -1348,7 +1348,7 @@ namespace GPBoost {
 							}
 							if (calc_gradient) {
 								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-									D_grad_cluster_i[ipar].coeffRef(i, i) = h_D_grad_data[ipar * num_re_cluster_i + i];
+									D_grad_cluster_i[ipar].coeffRef(i, i) += h_D_grad_data[ipar * num_re_cluster_i + i];
 								}
 							}
 						}

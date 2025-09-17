@@ -423,11 +423,13 @@ namespace GPBoost {
         CalcCovFactorGradientVecchia_GPU <<<blocksPerGrid, threadsPerBlock>>> (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_data,B_grad_data,
             D_grad_data,   pars,num_par,num_par_gp,gauss_likelihood,transf_scale,calc_cov_factor,calc_gradient,calc_gradient_nugget,exclude_marg_var_grad,ard,EPSILON_NUMBERS);
         // Check for launch configuration/argument errors
+        printf("Thread0\n"); fflush(stdout);
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             printf("Kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
+        printf("Thread0\n"); fflush(stdout);
         // Now wait for kernel to finish
         cudaError_t execErr = cudaDeviceSynchronize();
         if (execErr != cudaSuccess) {
