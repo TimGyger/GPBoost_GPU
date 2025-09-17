@@ -1315,54 +1315,70 @@ namespace GPBoost {
 					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					//cudaDeviceSynchronize();
 
-					std::vector<double> h_B_data(total_nnz);
-					std::vector<double> h_D_inv_data(num_re_cluster_i);
-					std::vector<double> h_B_grad_data(num_par_gp* total_nnz);
-					std::vector<double> h_D_grad_data(num_par_gp* num_re_cluster_i);
+					size_t size_B = total_nnz;
+					size_t size_D_inv = num_re_cluster_i;
+					size_t size_B_grad = num_par_gp * total_nnz;
+					size_t size_D_grad = num_par_gp * num_re_cluster_i;
+					size_t total_size = size_B + size_D_inv + size_B_grad + size_D_grad;
 
-					// Copy device arrays back to host if needed
-					cudaMemcpy(h_B_data.data(), d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_inv_data.data(), d_D_inv_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_B_grad_data.data(), d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_grad_data.data(), d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					double* h_all;
+					cudaMallocHost(&h_all, total_size * sizeof(double));
+
+					// --- 2. Map pointers to sections of the buffer ---
+					double* h_B_data = h_all;
+					double* h_D_inv_data = h_B_data + size_B;
+					double* h_B_grad_data = h_D_inv_data + size_D_inv;
+					double* h_D_grad_data = h_B_grad_data + size_B_grad;
+
+					// --- 3. Create a stream for async copies ---
+					cudaStream_t stream;
+					cudaStreamCreate(&stream);
+
+					// --- 4. Copy from device to host asynchronously ---
+					cudaMemcpyAsync(h_B_data, d_B_data, size_B * sizeof(double), cudaMemcpyDeviceToHost, stream);
+					cudaMemcpyAsync(h_D_inv_data, d_D_inv_data, size_D_inv * sizeof(double), cudaMemcpyDeviceToHost, stream);
+					cudaMemcpyAsync(h_B_grad_data, d_B_grad_data, size_B_grad * sizeof(double), cudaMemcpyDeviceToHost, stream);
+					cudaMemcpyAsync(h_D_grad_data, d_D_grad_data, size_D_grad * sizeof(double), cudaMemcpyDeviceToHost, stream);
+
+					// --- 5. Wait for all transfers to finish ---
+					cudaStreamSynchronize(stream);
+					cudaStreamDestroy(stream);
+
+					// --- 6. Use h_B_data, h_D_inv_data, h_B_grad_data, h_D_grad_data as usual ---
+					// (no changes needed in rest of your code)
+
+					// --- 7. Free pinned host memory after usage ---
+					cudaFreeHost(h_all);
 					if (GPU_success) {
-						// --- Step 2: Preallocate sparse matrices efficiently ---
-						if (calc_cov_factor) B_cluster_i.reserve(total_nnz);
-						if (calc_gradient) {
-							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-								B_grad_cluster_i[ipar].reserve(total_nnz);
-								D_grad_cluster_i[ipar].reserve(num_re_cluster_i);
-							}
-						}
-
-						// --- Step 3: Fill values using parallel loops ---
 #pragma omp parallel for
 						for (int i = 0; i < num_re_cluster_i; ++i) {
-							int start = nn_ptr[i];
-							int end = nn_ptr[i + 1];
-							for (int j = start; j < end; ++j) {
+							for (int j = nn_ptr[i]; j < nn_ptr[i + 1]; ++j) {
 								int col = nn_idx[j];
-								if (calc_cov_factor) B_cluster_i.insertBack(i, col) = h_B_data[j];
+								if (calc_cov_factor) {
+									B_cluster_i.coeffRef(i, col) = h_B_data[j];
+								}
 								if (calc_gradient) {
 									for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-										B_grad_cluster_i[ipar].insertBack(i, col) = h_B_grad_data[ipar * total_nnz + j];
+										B_grad_cluster_i[ipar].coeffRef(i, col) = h_B_grad_data[ipar * total_nnz + j];
 									}
 								}
 							}
-							if (calc_cov_factor) D_inv_cluster_i.insertBack(i, i) = h_D_inv_data[i];
+							if (calc_cov_factor) {
+								D_inv_cluster_i.coeffRef(i, i) = h_D_inv_data[i];
+							}
 							if (calc_gradient) {
 								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-									D_grad_cluster_i[ipar].insertBack(i, i) = h_D_grad_data[ipar * num_re_cluster_i + i];
+									D_grad_cluster_i[ipar].coeffRef(i, i) = h_D_grad_data[ipar * num_re_cluster_i + i];
 								}
 							}
 						}
 
-						// --- Step 4: Finalize matrices ---
-						if (calc_cov_factor) B_cluster_i.finalize();
+						// --- Step 3: Optional compression (already initialized, but safe) ---
+						if (calc_cov_factor) B_cluster_i.makeCompressed();
 						if (calc_gradient) {
 							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-								B_grad_cluster_i[ipar].finalize();
-								D_grad_cluster_i[ipar].finalize();
+								B_grad_cluster_i[ipar].makeCompressed();
+								D_grad_cluster_i[ipar].makeCompressed();
 							}
 						}
 					}
