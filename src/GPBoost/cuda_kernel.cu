@@ -205,16 +205,16 @@ namespace GPBoost {
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
         int k = end - start;
 
-        __shared__ double cov_mat_between_neighbors[MAX_K * MAX_K];
-        __shared__ double cov_grad_mats_between_neighbors[MAX_NUM_PAR_GP * MAX_K * MAX_K];
-        __shared__ double cov_mat_obs_neighbors[MAX_K];
-        __shared__ double cov_grad_mats_obs_neighbors[MAX_NUM_PAR_GP * MAX_K];
-        __shared__ double L[MAX_K * MAX_K];
-        __shared__ double y[MAX_K];
-        __shared__ double z[MAX_K];
-        __shared__ double A_i[MAX_K];
-        __shared__ double A_i_grad_sigma2[MAX_K];
-        __shared__ double A_i_grad[MAX_K];
+        double cov_mat_between_neighbors[MAX_K * MAX_K];
+        double cov_grad_mats_between_neighbors[MAX_NUM_PAR_GP * MAX_K * MAX_K];
+        double cov_mat_obs_neighbors[MAX_K];
+        double cov_grad_mats_obs_neighbors[MAX_NUM_PAR_GP * MAX_K];
+        double L[MAX_K * MAX_K];
+        double y[MAX_K];
+        double z[MAX_K];
+        double A_i[MAX_K];
+        double A_i_grad_sigma2[MAX_K];
+        double A_i_grad[MAX_K];
 
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
