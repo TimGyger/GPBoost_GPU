@@ -19,10 +19,10 @@
 using LightGBM::Log;
 
 // Maximum neighbor size per data point
-#define MAX_K 64
+#define MAX_K 32
 
 // Maximum number of GP parameters
-#define MAX_NUM_PAR_GP 128
+#define MAX_NUM_PAR_GP 16
 
 namespace GPBoost {
 
