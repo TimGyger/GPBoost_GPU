@@ -1245,7 +1245,6 @@ namespace GPBoost {
 				if (GPU_success) {
 #ifdef USE_CUDA_GP
 					int total_nnz = B_cluster_i.nonZeros();
-					int num_nn_max = (int)nearest_neighbors_cluster_i[num_re_cluster_i - 1].size();
 					// Flattened arrays on device
 					double* d_B_data;
 					double* d_D_inv_data;
@@ -1302,7 +1301,7 @@ namespace GPBoost {
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 					Log::REInfo("Preparation time until = %g ", el_time);
-					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(num_nn_max, cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
+					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
 						d_coords, d_nn_ptr, d_nn_idx, JITTER_MULT_VECCHIA, nugget_var,
 						d_B_data, d_D_inv_data, d_B_grad_data, d_D_grad_data,
 						d_pars, num_par_comp, num_par_gp, gauss_likelihood, transf_scale,

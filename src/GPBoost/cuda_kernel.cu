@@ -18,6 +18,12 @@
 #include <LightGBM/utils/log.h>
 using LightGBM::Log;
 
+// Maximum neighbor size per data point
+#define MAX_K 64
+
+// Maximum number of GP parameters
+#define MAX_NUM_PAR_GP 128
+
 namespace GPBoost {
 
     // compute squared Euclidean distance between two points in d dims
@@ -199,38 +205,16 @@ namespace GPBoost {
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
         int k = end - start;
 
-        extern __shared__ double shmem[];
-        int offset = 0;
-
-        double* cov_mat_between_neighbors = shmem + offset;
-        offset += k * k;
-
-        double* cov_grad_mats_between_neighbors = shmem + offset;
-        offset += num_par_gp * k * k;
-
-        double* cov_mat_obs_neighbors = shmem + offset;
-        offset += k;
-
-        double* cov_grad_mats_obs_neighbors = shmem + offset;
-        offset += num_par_gp * k;
-
-        double* L = shmem + offset;
-        offset += k * k;
-
-        double* y = shmem + offset;
-        offset += k;
-
-        double* z = shmem + offset;
-        offset += k;
-
-        double* A_i = shmem + offset;
-        offset += k;
-
-        double* A_i_grad_sigma2 = shmem + offset;
-        offset += k;
-
-        double* A_i_grad = shmem + offset;
-        offset += k;
+        __shared__ double cov_mat_between_neighbors[MAX_K * MAX_K];
+        __shared__ double cov_grad_mats_between_neighbors[MAX_NUM_PAR_GP * MAX_K * MAX_K];
+        __shared__ double cov_mat_obs_neighbors[MAX_K];
+        __shared__ double cov_grad_mats_obs_neighbors[MAX_NUM_PAR_GP * MAX_K];
+        __shared__ double L[MAX_K * MAX_K];
+        __shared__ double y[MAX_K];
+        __shared__ double z[MAX_K];
+        __shared__ double A_i[MAX_K];
+        __shared__ double A_i_grad_sigma2[MAX_K];
+        __shared__ double A_i_grad[MAX_K];
 
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
@@ -406,7 +390,6 @@ namespace GPBoost {
     }
 
     bool LaunchCalcCovFactorGradientVecchia_GPU(
-        const int num_neighbors,
         const double shape,                 // smoothness param
         const double C,                     // range param
         const int n,                        // number of data points
@@ -437,22 +420,8 @@ namespace GPBoost {
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
         printf("Thread0\n"); fflush(stdout);
-        int k_max = num_neighbors;  
-        size_t shmem_size = threadsPerBlock * (
-            k_max * k_max +                  // cov_mat_between_neighbors
-            num_par_gp * k_max * k_max +     // cov_grad_mats_between_neighbors
-            k_max +                          // cov_mat_obs_neighbors
-            num_par_gp * k_max +             // cov_grad_mats_obs_neighbors
-            k_max * k_max +                  // L
-            k_max +                          // y
-            k_max +                          // z
-            k_max +                          // A_i
-            k_max +                          // A_i_grad_sigma2
-            k_max                             // A_i_grad
-            ) * sizeof(double);
-        printf("Thread0\n"); fflush(stdout);
         // kernel starten
-        CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock, shmem_size >> > (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_inv_data,B_grad_data,
+        CalcCovFactorGradientVecchia_GPU <<<blocksPerGrid, threadsPerBlock>>> (shape,C, n, dim_coords, coords, nn_ptr,nn_idx,jitter, nugget_var,  B_data, D_inv_data,B_grad_data,
             D_grad_data,   pars,num_par,num_par_gp,gauss_likelihood,transf_scale,calc_cov_factor,calc_gradient,calc_gradient_nugget,exclude_marg_var_grad,ard,EPSILON_NUMBERS);
         // Check for launch configuration/argument errors
         cudaError_t launchErr = cudaGetLastError();
