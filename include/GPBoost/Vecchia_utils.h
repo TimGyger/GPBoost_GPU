@@ -23,7 +23,6 @@ namespace GPBoost {
 
 #ifdef USE_CUDA_GP
 	bool LaunchCalcCovFactorGradientVecchia_GPU(
-		const int num_neighbors,
 		const double shape,                 // smoothness param
 		const double C,                     // range param
 		const int n,                        // number of data points
