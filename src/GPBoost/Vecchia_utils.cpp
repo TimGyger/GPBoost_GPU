@@ -1246,14 +1246,14 @@ namespace GPBoost {
 #ifdef USE_CUDA_GP
 					int total_nnz = B_cluster_i.nonZeros();
 					// Flattened arrays on device
-					double* d_B_data;
-					double* d_D_data;
-					double* d_B_grad_data;
-					double* d_D_grad_data;
-					double* d_coords;  // device pointer to coordinates
-					double* d_pars;    // covariance parameters
-					int* d_nn_ptr;
-					int* d_nn_idx;
+					double* d_B_data = nullptr;
+					double* d_D_data = nullptr;
+					double* d_B_grad_data = nullptr;
+					double* d_D_grad_data = nullptr;
+					double* d_coords = nullptr;  // device pointer to coordinates
+					double* d_pars = nullptr;    // covariance parameters
+					int* d_nn_ptr = nullptr;
+					int* d_nn_idx = nullptr;
 
 					// Allocate
 					if (calc_cov_factor) {
@@ -1265,8 +1265,10 @@ namespace GPBoost {
 						cudaMalloc(&d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double));
 					}
 					// Copy host arrays to device
-					cudaMemcpy(d_B_data, B_cluster_i.valuePtr(), total_nnz * sizeof(double), cudaMemcpyHostToDevice);
-					cudaMemcpy(d_D_data, D_inv_cluster_i.diagonal().data(), num_re_cluster_i * sizeof(double), cudaMemcpyHostToDevice);
+					if (calc_cov_factor) {
+						cudaMemcpy(d_B_data, B_cluster_i.valuePtr(), total_nnz * sizeof(double), cudaMemcpyHostToDevice);
+						cudaMemcpy(d_D_data, D_inv_cluster_i.diagonal().data(), num_re_cluster_i * sizeof(double), cudaMemcpyHostToDevice);
+					}
 					if (calc_gradient) {
 						for (int ipar = 0; ipar < num_par_gp; ++ipar) {
 							cudaMemcpy(d_B_grad_data + ipar * total_nnz, B_grad_cluster_i[ipar].valuePtr(), total_nnz * sizeof(double), cudaMemcpyHostToDevice);
