@@ -1315,40 +1315,20 @@ namespace GPBoost {
 					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					//cudaDeviceSynchronize();
 
-					size_t size_B = total_nnz;
-					size_t size_D_inv = num_re_cluster_i;
-					size_t size_B_grad = num_par_gp * total_nnz;
-					size_t size_D_grad = num_par_gp * num_re_cluster_i;
-					size_t total_size = size_B + size_D_inv + size_B_grad + size_D_grad;
+					std::vector<double> h_B_data(total_nnz);
+					std::vector<double> h_D_inv_data(num_re_cluster_i);
+					std::vector<double> h_B_grad_data(num_par_gp* total_nnz);
+					std::vector<double> h_D_grad_data(num_par_gp* num_re_cluster_i);
 
-					double* h_all;
-					cudaMallocHost(&h_all, total_size * sizeof(double));
-
-					// --- 2. Map pointers to sections of the buffer ---
-					double* h_B_data = h_all;
-					double* h_D_inv_data = h_B_data + size_B;
-					double* h_B_grad_data = h_D_inv_data + size_D_inv;
-					double* h_D_grad_data = h_B_grad_data + size_B_grad;
-
-					// --- 3. Create a stream for async copies ---
-					cudaStream_t stream;
-					cudaStreamCreate(&stream);
-
-					// --- 4. Copy from device to host asynchronously ---
-					cudaMemcpyAsync(h_B_data, d_B_data, size_B * sizeof(double), cudaMemcpyDeviceToHost, stream);
-					cudaMemcpyAsync(h_D_inv_data, d_D_inv_data, size_D_inv * sizeof(double), cudaMemcpyDeviceToHost, stream);
-					cudaMemcpyAsync(h_B_grad_data, d_B_grad_data, size_B_grad * sizeof(double), cudaMemcpyDeviceToHost, stream);
-					cudaMemcpyAsync(h_D_grad_data, d_D_grad_data, size_D_grad * sizeof(double), cudaMemcpyDeviceToHost, stream);
-
-					// --- 5. Wait for all transfers to finish ---
-					cudaStreamSynchronize(stream);
-					cudaStreamDestroy(stream);
-
-					// --- 6. Use h_B_data, h_D_inv_data, h_B_grad_data, h_D_grad_data as usual ---
-					// (no changes needed in rest of your code)
-
-					// --- 7. Free pinned host memory after usage ---
-					cudaFreeHost(h_all);
+					// Copy device arrays back to host if needed
+					cudaMemcpy(h_B_data.data(), d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
+					cudaMemcpy(h_D_inv_data.data(), d_D_inv_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					cudaMemcpy(h_B_grad_data.data(), d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
+					cudaMemcpy(h_D_grad_data.data(), d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					end = std::chrono::steady_clock::now();//only for debugging
+					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+					Log::REInfo("Computation1 = %g ", el_time);
+					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					if (GPU_success) {
 #pragma omp parallel for
 						for (int i = 0; i < num_re_cluster_i; ++i) {
@@ -1382,6 +1362,10 @@ namespace GPBoost {
 							}
 						}
 					}
+					end = std::chrono::steady_clock::now();//only for debugging
+					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+					Log::REInfo("Computation2 = %g ", el_time);
+					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 					cudaFree(d_B_data);
 					cudaFree(d_B_grad_data);
 					cudaFree(d_D_inv_data);
@@ -1396,6 +1380,10 @@ namespace GPBoost {
 					GPU_success = false;
 #endif
 				}
+				end = std::chrono::steady_clock::now();//only for debugging
+				el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+				Log::REInfo("Computation3 = %g ", el_time);
+				std::this_thread::sleep_for(std::chrono::milliseconds(200));
 			}
 			if (!GPU_success) {
 				Log::REInfo("CalcCovFactorGradientVecchia for this covariance function is not implemented for GPU.");
