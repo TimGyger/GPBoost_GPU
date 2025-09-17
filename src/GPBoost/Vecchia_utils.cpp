@@ -1415,6 +1415,9 @@ namespace GPBoost {
 							re_comps_vecchia_cluster_i[ind_intercept_gp + j]->CalcSigmaAndSigmaGradVecchia(dist_obs_neighbors_cluster_i[i], coords_i, coords_nn_i,
 								cov_mat_obs_neighbors, cov_grad_mats_obs_neighbors.data() + ind_first_par,
 								calc_gradient, transf_scale, nugget_var, false);//write on matrices directly for first GP component
+							if (i == 10) {
+								Log::REInfo("Thread2 %d %g %g", i, cov_mat_obs_neighbors.coeffRef(0,0), cov_mat_obs_neighbors.coeffRef(1, 0));
+							}
 							re_comps_vecchia_cluster_i[ind_intercept_gp + j]->CalcSigmaAndSigmaGradVecchia(dist_between_neighbors_cluster_i[i], coords_nn_i, coords_nn_i,
 								cov_mat_between_neighbors, cov_grad_mats_between_neighbors.data() + ind_first_par,
 								calc_gradient, transf_scale, nugget_var, true);
