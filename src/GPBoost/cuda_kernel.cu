@@ -304,6 +304,9 @@ namespace GPBoost {
                 D_grad_data[num_par_gp - 1 + i] = 1.;
             }
         }
+        if (calc_cov_factor) {
+            D_data[i] = Sigma_ii;
+        }
         if (i > 0) {
             // --- Cholesky: compute L such that Sigma = L * L^T
             // L stored in row-major: L[row*k + col], valid for col <= row
@@ -371,22 +374,17 @@ namespace GPBoost {
                     D_grad_data[num_par_gp - 1 + i] -= dot_grad;
                 }
             }
-        }
-
-
-        // Now A_i = Sigma_nn^{-1} * s^T (k x 1)
-        // B_i (1 x k) = (s * Sigma_nn^{-1}) = (A_i)^T  (because Sigma is symmetric)
-        // store B at B_data[start + j] = -A_i[j]
-        if (calc_cov_factor) {
-            for (int j = 0; j < k; ++j) {
-                B_data[start + j] = -A_i[j];
+            // Now A_i = Sigma_nn^{-1} * s^T (k x 1)
+            // B_i (1 x k) = (s * Sigma_nn^{-1}) = (A_i)^T  (because Sigma is symmetric)
+            // store B at B_data[start + j] = -A_i[j]
+            if (calc_cov_factor) {
+                for (int j = 0; j < k; ++j) {
+                    B_data[start + j] = -A_i[j];
+                }
+                double dot = 0.0;
+                for (int j = 0; j < k; ++j) dot += cov_mat_obs_neighbors[j] * A_i[j];
+                D_data[i] -= dot;
             }
-        }
-        // Compute D_i = Sigma_ii - s * A_i
-        double dot = 0.0;
-        for (int j = 0; j < k; ++j) dot += cov_mat_obs_neighbors[j] * A_i[j];
-        if (calc_cov_factor) {
-            D_data[i] = Sigma_ii - dot;
         }
     }
 
@@ -418,19 +416,14 @@ namespace GPBoost {
 
         printf("Thread0\n"); fflush(stdout);
         // berechne blocks/threads
-        int threadsPerBlock = 128;
+        int threadsPerBlock = 128; // must match kernel launch
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
+        int totalThreads = threadsPerBlock; // slices are per block threads (threadIdx.x)
+
+        cudaMalloc(&d_cov_mat_between_neighbors, totalThreads * MAX_K * MAX_K * sizeof(double));
+        cudaMalloc(&d_cov_grad_mats_between_neighbors, totalThreads * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double));
+        cudaMalloc(&d_L, totalThreads * MAX_K * MAX_K * sizeof(double));
         printf("Thread0\n"); fflush(stdout);
-        // kernel starten
-        // Allocate global memory for slices
-        double* d_cov_mat_between_neighbors;
-        cudaMalloc(&d_cov_mat_between_neighbors, threadsPerBlock * MAX_K * MAX_K * sizeof(double));
-
-        double* d_cov_grad_mats_between_neighbors;
-        cudaMalloc(&d_cov_grad_mats_between_neighbors, threadsPerBlock * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double));
-
-        double* d_L;
-        cudaMalloc(&d_L, threadsPerBlock * MAX_K * MAX_K * sizeof(double));
 
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
             shape, C, n, dim_coords,

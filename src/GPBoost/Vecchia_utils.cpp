@@ -1611,7 +1611,7 @@ namespace GPBoost {
 		}
 		end = std::chrono::steady_clock::now();//only for debugging
 		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-		Log::REInfo("Vecchia BDB time until = %g and val %g ", el_time, D_inv_cluster_i.coeffRef(10, 10));
+		Log::REInfo("Vecchia BDB time until = %g and val %g and %g ", el_time, D_inv_cluster_i.coeffRef(10, 10), D_inv_cluster_i.coeffRef(0, 0));
 	}//end CalcCovFactorGradientVecchia
 
 	void CalcPredVecchiaObservedFirstOrder(bool CondObsOnly,
