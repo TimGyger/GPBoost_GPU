@@ -458,7 +458,6 @@ namespace GPBoost {
         CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
         printf("malloc cov ok (%.2f KB)\n", size_cov / 1024.0); 
 
-        size_t size_cov_grad = (size_t)16 * 1024 * 1024; // 16 MB
         printf("Trying to malloc grad (%.2f MB)\n", size_cov_grad / (1024.0 * 1024.0));
         CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
         printf("malloc grad ok\n");
