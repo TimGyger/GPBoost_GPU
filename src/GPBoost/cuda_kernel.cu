@@ -199,9 +199,6 @@ namespace GPBoost {
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
-        if (i == 10) {
-            printf("Thread\n");
-        }
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
@@ -376,6 +373,9 @@ namespace GPBoost {
                 double dot = 0.0;
                 for (int j = 0; j < k; ++j) dot += cov_mat_obs_neighbors[j] * A_i[j];
                 D_data[i] -= dot;
+                if (i == 10 || i == 100 || i == 1000) {
+                    printf("Thread %g and %g\n", D_data[i], dot);
+                }
             }
         }
     }
