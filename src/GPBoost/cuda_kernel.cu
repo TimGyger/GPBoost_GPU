@@ -207,12 +207,11 @@ namespace GPBoost {
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
         int k = end - start;
 
-        int tid = threadIdx.x; // local thread inside block
-
+        
         // Each thread uses its slice in global memory
-        double* cov_mat_between_neighbors = d_cov_mat_between_neighbors + tid * MAX_K * MAX_K;
-        double* cov_grad_mats_between_neighbors = d_cov_grad_mats_between_neighbors + tid * MAX_NUM_PAR_GP * MAX_K * MAX_K;
-        double* L = d_L + tid * MAX_K * MAX_K;
+        double* cov_mat_between_neighbors = d_cov_mat_between_neighbors + i * MAX_K * MAX_K;
+        double* cov_grad_mats_between_neighbors = d_cov_grad_mats_between_neighbors + i * MAX_NUM_PAR_GP * MAX_K * MAX_K;
+        double* L = d_L + i * MAX_K * MAX_K;
 
         // small arrays remain on the stack
         double cov_mat_obs_neighbors[MAX_K];
