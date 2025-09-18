@@ -274,7 +274,7 @@ namespace GPBoost {
                 }
             }
             if (i == 10) {
-                printf("Thread5\n");
+                printf("Thread5 %g\n", cov_mat_between_neighbors[0]);
             }
             if (gauss_likelihood) {
                 if (transf_scale) {
@@ -288,7 +288,7 @@ namespace GPBoost {
                 for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] *= jitter;
             }
             if (i == 10) {
-                printf("Thread6\n");
+                printf("Thread6 %g\n", cov_mat_between_neighbors[0]);
             }
         }
         double Sigma_ii = pars[0];
