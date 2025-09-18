@@ -16,8 +16,7 @@
 #include <device_launch_parameters.h>
 #include <cusolverDn.h>
 #include <LightGBM/utils/log.h>
-#include <thread>
-#include <chrono>
+#include <unistd.h>
 using LightGBM::Log;
 
 // Maximum neighbor size per data point
@@ -201,9 +200,6 @@ namespace GPBoost {
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
-        if (i < 10) {
-            printf("Thread %d", i);
-        }
 
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
@@ -224,9 +220,6 @@ namespace GPBoost {
 
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
-        if (i < 10) {
-            printf("Thread1 %d", i);
-        }
         if (i > 0) {
             // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
             for (int jj = 0; jj < k; ++jj) {
@@ -243,9 +236,6 @@ namespace GPBoost {
                         cov_grad_mats_obs_neighbors[ipar * k + jj] = GradientRangeMatern_GPU(xi, xj, pars, r, C, shape, ipar, ard, EPSILON_NUMBERS);
                     }
                 }
-            }
-            if (i < 10) {
-                printf("Thread2 %d", i);
             }
             // compute Sigma_nn (symmetric)
             for (int p = 0; p < k; ++p) {
@@ -273,9 +263,6 @@ namespace GPBoost {
                         }
                     }
                 }
-            }
-            if (i < 10) {
-                printf("Thread3 %d", i);
             }
             if (gauss_likelihood) {
                 if (transf_scale) {
@@ -447,27 +434,27 @@ namespace GPBoost {
         printf("Alloc sizes (bytes): cov=%zu, grad=%zu, L=%zu\n",
             size_cov, size_cov_grad, size_L); fflush(stdout);
 
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        sleep(1);
         // check free memory before malloc
     
         double* d_cov_mat_between_neighbors = nullptr;
         double* d_cov_grad_mats_between_neighbors = nullptr;
         double* d_L = nullptr;
         printf("Thread0\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        sleep(1);
         // allocate step by step
         CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc cov ok (%.2f KB)\n", size_cov / 1024.0); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        sleep(1);
         CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc grad ok (%.2f KB)\n", size_cov_grad / 1024.0); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        sleep(1);
         CUDA_CHECK(cudaMalloc(&d_L, size_L));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc L ok (%.2f KB)\n", size_L / 1024.0); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        sleep(1);
         printf("Thread0 (after allocations)\n"); fflush(stdout);
 
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
