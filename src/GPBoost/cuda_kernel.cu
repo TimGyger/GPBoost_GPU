@@ -321,7 +321,7 @@ namespace GPBoost {
         }
 
         if (i == 10) {
-            printf("Thread9\n");
+            printf("Thread9 %g %g %g\n", cov_mat_between_neighbors[0], cov_mat_between_neighbors[1], cov_mat_between_neighbors[2]);
         }
         if (i > 0) {
             // --- Cholesky: compute L such that Sigma = L * L^T
