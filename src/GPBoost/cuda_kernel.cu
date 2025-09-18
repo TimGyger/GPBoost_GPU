@@ -459,28 +459,26 @@ namespace GPBoost {
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
-        // Each block reuses the same workspace, only need threadsPerBlock slices
-        int totalThreads = threadsPerBlock;
+        // Total global threads
+        int totalThreads = threadsPerBlock * blocksPerGrid;
 
-        // allocation sizes
+        // Allocation sizes: one workspace per global thread
         size_t size_cov = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
         size_t size_cov_grad = (size_t)totalThreads * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double);
         size_t size_L = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
 
-        // print planned sizes
-        printf("Alloc sizes (bytes): cov=%zu, grad=%zu, L=%zu\n",
-            size_cov, size_cov_grad, size_L); fflush(stdout);
+        printf("Alloc sizes (bytes): cov=%zu, grad=%zu, L=%zu\n", size_cov, size_cov_grad, size_L); fflush(stdout);
 
-        // check free memory before malloc
-    
+        // Allocate device memory
         double* d_cov_mat_between_neighbors = nullptr;
         double* d_cov_grad_mats_between_neighbors = nullptr;
         double* d_L = nullptr;
-        // allocate step by step
+
         CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
         CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
         CUDA_CHECK(cudaMalloc(&d_L, size_L));
-        printf("Thread0 (after allocations)\n"); fflush(stdout);
+
+        printf("Device memory allocated\n"); fflush(stdout);
 
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
             shape, C, n, dim_coords,
