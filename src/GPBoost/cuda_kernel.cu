@@ -447,31 +447,27 @@ namespace GPBoost {
         printf("Alloc sizes (bytes): cov=%zu, grad=%zu, L=%zu\n",
             size_cov, size_cov_grad, size_L); fflush(stdout);
 
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         // check free memory before malloc
-        size_t freeMem, totalMem;
-        CUDA_CHECK(cudaMemGetInfo(&freeMem, &totalMem));
-        printf("GPU memory free %.2f MB / %.2f MB\n",
-            freeMem / (1024.0 * 1024.0), totalMem / (1024.0 * 1024.0)); fflush(stdout);
-
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+    
         double* d_cov_mat_between_neighbors = nullptr;
         double* d_cov_grad_mats_between_neighbors = nullptr;
         double* d_L = nullptr;
-
+        printf("Thread0\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         // allocate step by step
         CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc cov ok (%.2f KB)\n", size_cov / 1024.0); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc grad ok (%.2f KB)\n", size_cov_grad / 1024.0); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         CUDA_CHECK(cudaMalloc(&d_L, size_L));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc L ok (%.2f KB)\n", size_L / 1024.0); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         printf("Thread0 (after allocations)\n"); fflush(stdout);
 
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
