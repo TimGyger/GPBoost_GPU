@@ -417,16 +417,17 @@ namespace GPBoost {
         const double EPSILON_NUMBERS) {
 
 #define CUDA_CHECK(call)                                                     \
-    {                                                                        \
-        cudaError_t err = call;                                              \
-        if (err != cudaSuccess) {                                            \
-            fprintf(stderr, "CUDA error at %s:%d: %s\n",                     \
-                    __FILE__, __LINE__, cudaGetErrorString(err));            \
-            exit(EXIT_FAILURE);                                              \
-        }                                                                    \
-    }
+{                                                                            \
+    cudaError_t err = call;                                                  \
+    if (err != cudaSuccess) {                                                \
+        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
+                __FILE__, __LINE__, cudaGetErrorString(err));                \
+        exit(EXIT_FAILURE);                                                  \
+    }                                                                        \
+}
 
-        printf("Thread0\n"); fflush(stdout);
+        printf("Thread0 (before allocations)\n"); fflush(stdout);
+
         // berechne blocks/threads
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
@@ -434,18 +435,36 @@ namespace GPBoost {
         // Each block reuses the same workspace, only need threadsPerBlock slices
         int totalThreads = threadsPerBlock;
 
+        // allocation sizes
         size_t size_cov = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
         size_t size_cov_grad = (size_t)totalThreads * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double);
         size_t size_L = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
 
-        double* d_cov_mat_between_neighbors;
-        double* d_cov_grad_mats_between_neighbors;
-        double* d_L;
+        // print planned sizes
+        printf("Alloc sizes (bytes): cov=%zu, grad=%zu, L=%zu\n",
+            size_cov, size_cov_grad, size_L); fflush(stdout);
 
+        // check free memory before malloc
+        size_t freeMem, totalMem;
+        CUDA_CHECK(cudaMemGetInfo(&freeMem, &totalMem));
+        printf("GPU memory free %.2f MB / %.2f MB\n",
+            freeMem / (1024.0 * 1024.0), totalMem / (1024.0 * 1024.0)); fflush(stdout);
+
+        double* d_cov_mat_between_neighbors = nullptr;
+        double* d_cov_grad_mats_between_neighbors = nullptr;
+        double* d_L = nullptr;
+
+        // allocate step by step
         CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
+        printf("malloc cov ok (%.2f KB)\n", size_cov / 1024.0); fflush(stdout);
+
         CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
+        printf("malloc grad ok (%.2f KB)\n", size_cov_grad / 1024.0); fflush(stdout);
+
         CUDA_CHECK(cudaMalloc(&d_L, size_L));
-        printf("Thread0\n"); fflush(stdout);
+        printf("malloc L ok (%.2f KB)\n", size_L / 1024.0); fflush(stdout);
+
+        printf("Thread0 (after allocations)\n"); fflush(stdout);
 
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
             shape, C, n, dim_coords,
