@@ -208,10 +208,12 @@ namespace GPBoost {
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
         int k = end - start;
 
+        int tid = threadIdx.x; // local thread inside block
+
         // Each thread uses its slice in global memory
-        double* cov_mat_between_neighbors = d_cov_mat_between_neighbors + i * MAX_K * MAX_K;
-        double* cov_grad_mats_between_neighbors = d_cov_grad_mats_between_neighbors + i * MAX_NUM_PAR_GP * MAX_K * MAX_K;
-        double* L = d_L + i * MAX_K * MAX_K;
+        double* cov_mat_between_neighbors = d_cov_mat_between_neighbors + tid * MAX_K * MAX_K;
+        double* cov_grad_mats_between_neighbors = d_cov_grad_mats_between_neighbors + tid * MAX_NUM_PAR_GP * MAX_K * MAX_K;
+        double* L = d_L + tid * MAX_K * MAX_K;
 
         // small arrays remain on the stack
         double cov_mat_obs_neighbors[MAX_K];
@@ -414,13 +416,23 @@ namespace GPBoost {
         bool ard,
         const double EPSILON_NUMBERS) {
 
+#define CUDA_CHECK(call)                                                     \
+    {                                                                        \
+        cudaError_t err = call;                                              \
+        if (err != cudaSuccess) {                                            \
+            fprintf(stderr, "CUDA error at %s:%d: %s\n",                     \
+                    __FILE__, __LINE__, cudaGetErrorString(err));            \
+            exit(EXIT_FAILURE);                                              \
+        }                                                                    \
+    }
+
         printf("Thread0\n"); fflush(stdout);
         // berechne blocks/threads
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
-        // Each thread gets its own slice
-        int totalThreads = threadsPerBlock * blocksPerGrid;
+        // Each block reuses the same workspace, only need threadsPerBlock slices
+        int totalThreads = threadsPerBlock;
 
         size_t size_cov = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
         size_t size_cov_grad = (size_t)totalThreads * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double);
@@ -430,9 +442,9 @@ namespace GPBoost {
         double* d_cov_grad_mats_between_neighbors;
         double* d_L;
 
-        cudaMalloc(&d_cov_mat_between_neighbors, size_cov);
-        cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad);
-        cudaMalloc(&d_L, size_L);
+        CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
+        CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
+        CUDA_CHECK(cudaMalloc(&d_L, size_L));
         printf("Thread0\n"); fflush(stdout);
 
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
