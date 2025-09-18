@@ -425,7 +425,8 @@ namespace GPBoost {
         exit(EXIT_FAILURE);                                                  \
     }                                                                        \
 }
-
+        CUDA_CHECK(cudaFree(0));  // forces context creation
+        printf("CUDA context initialized\n"); fflush(stdout);
         printf("Thread0 (before allocations)\n"); fflush(stdout);
 
         // berechne blocks/threads
@@ -458,16 +459,15 @@ namespace GPBoost {
 
         // allocate step by step
         CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
-        printf("malloc cov ok (%.2f KB)\n", size_cov / 1024.0);  fflush(stdout);
-
-
-        printf("Trying to malloc grad (%.2f MB)\n", size_cov_grad / (1024.0 * 1024.0)); fflush(stdout);
+        CUDA_CHECK(cudaDeviceSynchronize());
+        printf("malloc cov ok (%.2f KB)\n", size_cov / 1024.0); fflush(stdout);
 
         CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
-        printf("malloc grad ok\n"); fflush(stdout);
-
+        CUDA_CHECK(cudaDeviceSynchronize());
+        printf("malloc grad ok (%.2f KB)\n", size_cov_grad / 1024.0); fflush(stdout);
 
         CUDA_CHECK(cudaMalloc(&d_L, size_L));
+        CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc L ok (%.2f KB)\n", size_L / 1024.0); fflush(stdout);
 
         printf("Thread0 (after allocations)\n"); fflush(stdout);
