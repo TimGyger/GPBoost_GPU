@@ -1420,9 +1420,6 @@ namespace GPBoost {
 							re_comps_vecchia_cluster_i[ind_intercept_gp + j]->CalcSigmaAndSigmaGradVecchia(dist_between_neighbors_cluster_i[i], coords_nn_i, coords_nn_i,
 								cov_mat_between_neighbors, cov_grad_mats_between_neighbors.data() + ind_first_par,
 								calc_gradient, transf_scale, nugget_var, true);
-							if (i == 10) {
-								Log::REInfo("Thread2 %d %g %g %g %g", i, cov_mat_obs_neighbors.coeffRef(0, 0), cov_mat_obs_neighbors.coeffRef(1, 0), cov_mat_between_neighbors.coeffRef(0, 0), cov_mat_between_neighbors.coeffRef(1, 0));
-							}
 							if (gp_approx == "full_scale_vecchia") {
 								vec_t sigma_ip_Ihalf_sigma_cross_covT_obs = chol_ip_cross_cov_cluster_i.col(i);
 #pragma omp parallel for schedule(static)
@@ -1528,6 +1525,11 @@ namespace GPBoost {
 					}
 					else {
 						cov_mat_between_neighbors.diagonal().array() *= JITTER_MULT_VECCHIA;//Avoid numerical problems when there is no nugget effect
+					}
+					if (i == 10) {
+						Log::REInfo("Thread2 %d %g %g %g %g %i", i, cov_mat_obs_neighbors.coeffRef(0, 0), cov_mat_obs_neighbors.coeffRef(1, 0), 
+							cov_mat_between_neighbors.coeffRef(0, 0), cov_mat_between_neighbors.coeffRef(1, 0),
+							nearest_neighbors_cluster_i[i][0]);
 					}
 					den_mat_t A_i(1, num_nn);
 					den_mat_t A_i_grad_sigma2;

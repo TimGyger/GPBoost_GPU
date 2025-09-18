@@ -251,8 +251,8 @@ namespace GPBoost {
                     const double* xq = coords + ((size_t)idx_q) * dim_coords;
                     double r = sqrt(squared_distance(xp, xq, dim_coords));
                     double val = Matern_GPU(pars, r, shape, ard, EPSILON_NUMBERS);
-                    if (i == 10 && p == 0 && q == 0) {
-                        printf("Thread4 %g %g %g %g\n", pars[0], shape, r, val);
+                    if (i == 10 && p == 1 && q == 0) {
+                        printf("Thread4 %g %g %g %g %i %i\n", pars[0], shape, r, val, idx_p, idx_q);
                     }
                     cov_mat_between_neighbors[p * k + q] = val;
                     cov_mat_between_neighbors[q * k + p] = val;
