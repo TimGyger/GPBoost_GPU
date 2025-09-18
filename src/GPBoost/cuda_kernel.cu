@@ -442,7 +442,7 @@ namespace GPBoost {
 
         // print planned sizes
         printf("Alloc sizes (bytes): cov=%zu, grad=%zu, L=%zu\n",
-            size_cov, size_cov_grad, size_L) fflush(stdout);
+            size_cov, size_cov_grad, size_L); fflush(stdout);
 
 
         // check free memory before malloc
