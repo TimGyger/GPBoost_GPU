@@ -225,7 +225,7 @@ namespace GPBoost {
         const double* xi = coords + ((size_t)i) * dim_coords;
         if (i > 0) {
             if (i == 10) {
-                printf("Thread2\n");
+                printf("Thread3\n");
             }
             // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
             for (int jj = 0; jj < k; ++jj) {
@@ -273,6 +273,9 @@ namespace GPBoost {
                     }
                 }
             }
+            if (i == 10) {
+                printf("Thread5\n");
+            }
             if (gauss_likelihood) {
                 if (transf_scale) {
                     for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] += 1;
@@ -283,6 +286,9 @@ namespace GPBoost {
             }
             else {
                 for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] *= jitter;
+            }
+            if (i == 10) {
+                printf("Thread6\n");
             }
         }
         double Sigma_ii = pars[0];
@@ -304,8 +310,18 @@ namespace GPBoost {
                 D_grad_data[num_par_gp - 1 + i] = 1.;
             }
         }
+        if (i == 10) {
+            printf("Thread7\n");
+        }
         if (calc_cov_factor) {
             D_data[i] = Sigma_ii;
+            if (i == 10) {
+                printf("Thread8\n");
+            }
+        }
+
+        if (i == 10) {
+            printf("Thread9\n");
         }
         if (i > 0) {
             // --- Cholesky: compute L such that Sigma = L * L^T
@@ -319,6 +335,9 @@ namespace GPBoost {
 
             // --- Solve L^T * A_i = y  (back substitution)
             back_solve_lt(L, y, A_i, k);
+            if (i == 10) {
+                printf("Thread10\n");
+            }
             if (calc_gradient) {
                 if (calc_gradient_nugget) {
                     // --- Solve L * y = s^T  (forward substitution)
@@ -377,9 +396,15 @@ namespace GPBoost {
             // Now A_i = Sigma_nn^{-1} * s^T (k x 1)
             // B_i (1 x k) = (s * Sigma_nn^{-1}) = (A_i)^T  (because Sigma is symmetric)
             // store B at B_data[start + j] = -A_i[j]
+            if (i == 10) {
+                printf("Thread11\n");
+            }
             if (calc_cov_factor) {
                 for (int j = 0; j < k; ++j) {
                     B_data[start + j] = -A_i[j];
+                }
+                if (i == 10) {
+                    printf("Thread12\n");
                 }
                 double dot = 0.0;
                 for (int j = 0; j < k; ++j) dot += cov_mat_obs_neighbors[j] * A_i[j];
