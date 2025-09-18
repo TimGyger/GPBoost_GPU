@@ -243,9 +243,6 @@ namespace GPBoost {
                     }
                 }
             }
-            if (i == 10) {
-                printf("Thread4\n");
-            }
             // compute Sigma_nn (symmetric)
             for (int p = 0; p < k; ++p) {
                 for (int q = 0; q <= p; ++q) {
@@ -255,6 +252,9 @@ namespace GPBoost {
                     const double* xq = coords + ((size_t)idx_q) * dim_coords;
                     double r = sqrt(squared_distance(xp, xq, dim_coords));
                     double val = Matern_GPU(pars, r, shape, ard, EPSILON_NUMBERS);
+                    if (i == 10 && p == 0 && q == 0) {
+                        printf("Thread4 %g %g %g %g\n", pars[0], shape, r, val);
+                    }
                     cov_mat_between_neighbors[p * k + q] = val;
                     cov_mat_between_neighbors[q * k + p] = val;
                     if (calc_gradient) {
