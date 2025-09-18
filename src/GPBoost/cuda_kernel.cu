@@ -16,7 +16,6 @@
 #include <device_launch_parameters.h>
 #include <cusolverDn.h>
 #include <LightGBM/utils/log.h>
-#include <unistd.h>
 using LightGBM::Log;
 
 // Maximum neighbor size per data point
@@ -434,40 +433,35 @@ namespace GPBoost {
         printf("Alloc sizes (bytes): cov=%zu, grad=%zu, L=%zu\n",
             size_cov, size_cov_grad, size_L); fflush(stdout);
 
-        sleep(1);
         // check free memory before malloc
     
         double* d_cov_mat_between_neighbors = nullptr;
         double* d_cov_grad_mats_between_neighbors = nullptr;
         double* d_L = nullptr;
         printf("Thread0\n"); fflush(stdout);
-        sleep(1);
         // allocate step by step
         CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc cov ok (%.2f KB)\n", size_cov / 1024.0); fflush(stdout);
-        sleep(1);
         CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc grad ok (%.2f KB)\n", size_cov_grad / 1024.0); fflush(stdout);
-        sleep(1);
         CUDA_CHECK(cudaMalloc(&d_L, size_L));
         CUDA_CHECK(cudaDeviceSynchronize());
         printf("malloc L ok (%.2f KB)\n", size_L / 1024.0); fflush(stdout);
-        sleep(1);
         printf("Thread0 (after allocations)\n"); fflush(stdout);
 
-        CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
-            shape, C, n, dim_coords,
-            coords, nn_ptr, nn_idx,
-            jitter, nugget_var,
-            B_data, D_data, B_grad_data, D_grad_data,
-            pars, num_par, num_par_gp,
-            gauss_likelihood, transf_scale,
-            calc_cov_factor, calc_gradient,
-            calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS,
-            d_cov_mat_between_neighbors, d_cov_grad_mats_between_neighbors, d_L
-            );
+        //CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
+         //   shape, C, n, dim_coords,
+          //  coords, nn_ptr, nn_idx,
+           // jitter, nugget_var,
+          //  B_data, D_data, B_grad_data, D_grad_data,
+           // pars, num_par, num_par_gp,
+           // gauss_likelihood, transf_scale,
+          //  calc_cov_factor, calc_gradient,
+            //calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS,
+            //d_cov_mat_between_neighbors, d_cov_grad_mats_between_neighbors, d_L
+            //);
 
         cudaFree(d_cov_mat_between_neighbors);
         cudaFree(d_cov_grad_mats_between_neighbors);
