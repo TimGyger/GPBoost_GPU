@@ -199,6 +199,9 @@ namespace GPBoost {
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
+        if (i == 10) {
+            printf("Thread1\n");
+        }
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
@@ -215,10 +218,15 @@ namespace GPBoost {
         double cov_mat_obs_neighbors[MAX_K];
         double cov_grad_mats_obs_neighbors[MAX_NUM_PAR_GP * MAX_K];
         double y[MAX_K], z[MAX_K], A_i[MAX_K], A_i_grad_sigma2[MAX_K], A_i_grad[MAX_K];
-
+        if (i == 10) {
+            printf("Thread2\n");
+        }
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
         if (i > 0) {
+            if (i == 10) {
+                printf("Thread2\n");
+            }
             // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
             for (int jj = 0; jj < k; ++jj) {
                 int nj = nn_idx[start + jj];
@@ -234,6 +242,9 @@ namespace GPBoost {
                         cov_grad_mats_obs_neighbors[ipar * k + jj] = GradientRangeMatern_GPU(xi, xj, pars, r, C, shape, ipar, ard, EPSILON_NUMBERS);
                     }
                 }
+            }
+            if (i == 10) {
+                printf("Thread4\n");
             }
             // compute Sigma_nn (symmetric)
             for (int p = 0; p < k; ++p) {
