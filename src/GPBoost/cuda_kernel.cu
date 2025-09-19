@@ -224,13 +224,16 @@ namespace GPBoost {
         const double* xi = coords + ((size_t)i) * dim_coords;
         if (i > 0) {
             if (i == 10) {
-                printf("Thread3\n");
+                printf("Thread3 %g\n", xi[0]);
             }
             // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
             for (int jj = 0; jj < k; ++jj) {
                 int nj = nn_idx[start + jj];
                 const double* xj = coords + ((size_t)nj) * dim_coords;
                 double r = sqrt(squared_distance(xi, xj, dim_coords));
+                if (i == 10) {
+                    printf("Thread11 %g %i\n", xj[0], nj);
+                }
                 cov_mat_obs_neighbors[jj] = Matern_GPU(pars, r, shape, ard, EPSILON_NUMBERS);
                 if (calc_gradient) {
                     cov_grad_mats_obs_neighbors[0 * k + jj] = cov_mat_obs_neighbors[jj];
