@@ -224,7 +224,12 @@ namespace GPBoost {
         const double* xi = coords + ((size_t)i) * dim_coords;
         if (i > 0) {
             if (i == 10) {
-                printf("Thread3 %g\n", xi[0]);
+                const double* xi1 = coords + ((size_t)0) * dim_coords;
+                const double* xi2 = coords + ((size_t)1) * dim_coords;
+                const double* xi3 = coords + ((size_t)2) * dim_coords;
+                const double* xi4 = coords + ((size_t)3) * dim_coords;
+                const double* xi5 = coords + ((size_t)4) * dim_coords;
+                printf("Thread3 %g %g %g %g %g %g\n", xi[0], xi1[0], xi2[0], xi3[0], xi4[0], xi5[0]);
             }
             // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
             for (int jj = 0; jj < k; ++jj) {
