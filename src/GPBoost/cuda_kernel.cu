@@ -334,13 +334,13 @@ namespace GPBoost {
                         // --- Solve L^T * z = y  (back substitution)
                         back_solve_lt(L, y, z, k);
                         for (int j = 0; j < k; ++j) {
+                            if (i == 10)
+                            {
+                                printf("grad %g %g\n", A_i_grad[j], z[j]);
+                            }
                             A_i_grad[j] -= z[j];
                         }
                         for (int j = 0; j < k; ++j) {
-                            if (i == 10)
-                            {
-                                printf("grad %g %g\n", rhs[j], z[j]);
-                            }
                             B_grad_data[ipar * total_nnz + start + j] = -A_i_grad[j];
                         }
                         double dot_grad_1 = 0.0;
