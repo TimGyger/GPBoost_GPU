@@ -1494,7 +1494,7 @@ namespace GPBoost {
 					}
 					if (calc_gradient) {
 						if (i == 10) {
-							Log::REInfo("T1  %g %g ", cov_grad_mats_between_neighbors[1].coeffRef(0, 0), cov_grad_mats_between_neighbors[1].coeffRef(0, 1));
+							Log::REInfo("T1  %g %g ", cov_grad_mats_obs_neighbors[1].coeffRef(0, 0), cov_grad_mats_obs_neighbors[1].coeffRef(0, 1));
 						}
 						if (!(exclude_marg_var_grad && j == 0)) {
 							if (transf_scale) {
