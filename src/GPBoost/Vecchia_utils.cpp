@@ -1556,8 +1556,8 @@ namespace GPBoost {
 										if (i == 10) {
 											Log::REInfo("B_grad_cluster_i  %g ", B_grad_cluster_i[ind_first_par + ipar].coeffRef(i, nearest_neighbors_cluster_i[i][inn]));
 											Log::REInfo("rhs  %g %g", cov_grad_mats_obs_neighbors[ind_first_par + ipar].coeffRef(inn, 0), 
-												(chol_fact_between_neighbors.solve(cov_grad_mats_obs_neighbors[ind_first_par + ipar])).transpose().coeffRef(0,inn),
-												A_i* ((chol_fact_between_neighbors.solve(cov_grad_mats_between_neighbors[ind_first_par + ipar])).transpose()).coeffRef(0, inn));
+												(chol_fact_between_neighbors.solve(cov_grad_mats_obs_neighbors[ind_first_par + ipar]))[inn],
+												(A_i* ((chol_fact_between_neighbors.solve(cov_grad_mats_between_neighbors[ind_first_par + ipar]))))[inn]);
 										}
 									}
 									if (ipar == 0) {
