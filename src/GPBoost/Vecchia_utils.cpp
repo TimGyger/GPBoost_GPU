@@ -1453,9 +1453,6 @@ namespace GPBoost {
 											}
 										}
 									}
-									if (i == 10) {
-										Log::REInfo("T1  %g %g ", cov_grad_mats_between_neighbors[1].coeffRef(0, 0), cov_grad_mats_between_neighbors[1].coeffRef(0, 1));
-									}
 								}
 							}
 						}
@@ -1496,6 +1493,9 @@ namespace GPBoost {
 						D_inv_cluster_i.coeffRef(i, i) += d_comp_j;
 					}
 					if (calc_gradient) {
+						if (i == 10) {
+							Log::REInfo("T1  %g %g ", cov_grad_mats_between_neighbors[1].coeffRef(0, 0), cov_grad_mats_between_neighbors[1].coeffRef(0, 1));
+						}
 						if (!(exclude_marg_var_grad && j == 0)) {
 							if (transf_scale) {
 								D_grad_cluster_i[j * num_par_comp].coeffRef(i, i) = d_comp_j;//derivative of the covariance function wrt the variance. derivative of the covariance function wrt to range is zero on the diagonal
