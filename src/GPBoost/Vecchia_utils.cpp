@@ -1527,6 +1527,7 @@ namespace GPBoost {
 						cov_mat_between_neighbors.diagonal().array() *= JITTER_MULT_VECCHIA;//Avoid numerical problems when there is no nugget effect
 					}
 					if (i == 10) {
+						Log::REInfo("Thread10 %g", coords_i.coeffRef(0, 0));
 						for (int ijij = 0; ijij < coords_nn_i.rows(); ijij++)
 						{
 							Log::REInfo("Thread11 %g %i", coords_nn_i.coeffRef(ijij, 0), nearest_neighbors_cluster_i[i][ijij]);
