@@ -232,7 +232,7 @@ namespace GPBoost {
             }
             if (i == 10)
             {
-                printf("grad %g %g\n", cov_grad_mats_obs_neighbors[1 * k + 0], cov_grad_mats_obs_neighbors[1 * k + 1]);
+                printf("grad %g %g %i\n", cov_grad_mats_obs_neighbors[1 * k + 0], cov_grad_mats_obs_neighbors[1 * k + 1], total_nnz);
             }
             // compute Sigma_nn (symmetric)
             for (int p = 0; p < k; ++p) {

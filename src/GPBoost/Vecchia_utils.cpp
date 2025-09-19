@@ -1309,7 +1309,7 @@ namespace GPBoost {
 
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Preparation time until = %g ", el_time);
+					Log::REInfo("Preparation time until = %g %i ", el_time, total_nnz);
 					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
 						d_coords, d_nn_ptr, d_nn_idx, JITTER_MULT_VECCHIA, nugget_var,
 						d_B_data, d_D_data, d_B_grad_data, d_D_grad_data,
