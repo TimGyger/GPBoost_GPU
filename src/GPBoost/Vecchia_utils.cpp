@@ -1533,13 +1533,6 @@ namespace GPBoost {
 					else {
 						cov_mat_between_neighbors.diagonal().array() *= JITTER_MULT_VECCHIA;//Avoid numerical problems when there is no nugget effect
 					}
-					if (i == 10) {
-						Log::REInfo("Thread10 %g", coords_i.coeffRef(0, 0));
-						for (int ijij = 0; ijij < coords_nn_i.rows(); ijij++)
-						{
-							Log::REInfo("Thread11 %g %i", coords_nn_i.coeffRef(ijij, 0), nearest_neighbors_cluster_i[i][ijij]);
-						}
-					}
 					den_mat_t A_i(1, num_nn);
 					den_mat_t A_i_grad_sigma2;
 					Eigen::LLT<den_mat_t> chol_fact_between_neighbors = cov_mat_between_neighbors.llt();

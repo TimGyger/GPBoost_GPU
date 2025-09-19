@@ -192,28 +192,25 @@ namespace GPBoost {
         bool calc_gradient_nugget,
         bool exclude_marg_var_grad,
         bool ard,
-        const double EPSILON_NUMBERS,
-        double* __restrict__ d_cov_mat_between_neighbors,
-        double* __restrict__ d_cov_grad_mats_between_neighbors,
-        double* __restrict__ d_L
+        const double EPSILON_NUMBERS
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
+
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
-        int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
+        int total_nnz = nn_ptr[n];
         int k = end - start;
 
-        
-        // Each thread uses its slice in global memory
-        double* cov_mat_between_neighbors = d_cov_mat_between_neighbors + i * MAX_K * MAX_K;
-        double* cov_grad_mats_between_neighbors = d_cov_grad_mats_between_neighbors + i * MAX_NUM_PAR_GP * MAX_K * MAX_K;
-        double* L = d_L + i * MAX_K * MAX_K;
+        // --- Stack-allocated temporary arrays per thread ---
+        double cov_mat_between_neighbors[MAX_K * MAX_K];
+        double cov_grad_mats_between_neighbors[MAX_NUM_PAR_GP * MAX_K * MAX_K];
+        double L[MAX_K * MAX_K];
 
-        // small arrays remain on the stack
         double cov_mat_obs_neighbors[MAX_K];
         double cov_grad_mats_obs_neighbors[MAX_NUM_PAR_GP * MAX_K];
         double y[MAX_K], z[MAX_K], A_i[MAX_K], A_i_grad_sigma2[MAX_K], A_i_grad[MAX_K];
+
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
         if (i > 0) {
@@ -414,24 +411,7 @@ namespace GPBoost {
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
-        // Total global threads
-        int totalThreads = threadsPerBlock * blocksPerGrid;
-
-        // Allocation sizes: one workspace per global thread
-        size_t size_cov = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
-        size_t size_cov_grad = (size_t)totalThreads * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double);
-        size_t size_L = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
-
-        // Allocate device memory
-        double* d_cov_mat_between_neighbors = nullptr;
-        double* d_cov_grad_mats_between_neighbors = nullptr;
-        double* d_L = nullptr;
-
-        CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
-        CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
-        CUDA_CHECK(cudaMalloc(&d_L, size_L));
-
-        printf("Device memory allocated\n"); fflush(stdout);
+        
 
 
         cudaEvent_t startEvent, stopEvent;
@@ -450,8 +430,7 @@ namespace GPBoost {
             pars, num_par, num_par_gp,
             gauss_likelihood, transf_scale,
             calc_cov_factor, calc_gradient,
-            calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS,
-            d_cov_mat_between_neighbors, d_cov_grad_mats_between_neighbors, d_L
+            calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS
             );
 
         // Record stop
