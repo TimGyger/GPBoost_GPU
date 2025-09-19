@@ -169,19 +169,19 @@ namespace GPBoost {
     }
 
     __global__ void CalcCovFactorGradientVecchia_GPU(
-        const double shape,
-        const double C,
-        const int n,                   // number of points in this chunk
-        const int dim_coords,
-        const double* __restrict__ coords,  // chunked coordinates: n * dim_coords
-        const int* __restrict__ nn_ptr,     // chunked neighbor pointers
-        const int* __restrict__ nn_idx,     // global neighbor indices
-        const double jitter,
-        const double nugget_var,
-        double* __restrict__ B_data,        // global
-        double* __restrict__ D_data,        // global
-        double* __restrict__ B_grad_data,   // global
-        double* __restrict__ D_grad_data,   // global
+        const double shape,                 // smoothness param
+        const double C,                     // range param
+        const int n,                        // number of data points
+        const int dim_coords,               // coordinate dimension
+        const double* __restrict__ coords,  // n * dim_coords, row-major (coords[i*dim + d])
+        const int* __restrict__ nn_ptr,     // length n+1  (nn_ptr[i+1]-nn_ptr[i] == k_i)
+        const int* __restrict__ nn_idx,     // flattened neighbor indices
+        const double jitter,                // e.g. 1e-8
+        const double nugget_var,            // e.g. 1e-8
+        double* __restrict__ B_data,        // flattened B rows: length == nn_ptr[n] (space preallocated)
+        double* __restrict__ D_data,    // length n
+        double* __restrict__ B_grad_data,   // length = num_params * total_nnz
+        double* __restrict__ D_grad_data,   // length = num_params * n
         const double* __restrict__ pars,
         const int num_par,
         const int num_par_gp,
@@ -193,31 +193,28 @@ namespace GPBoost {
         bool exclude_marg_var_grad,
         bool ard,
         const double EPSILON_NUMBERS,
-        // per-thread workspace
         double* __restrict__ d_cov_mat_between_neighbors,
         double* __restrict__ d_cov_grad_mats_between_neighbors,
         double* __restrict__ d_L
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
-
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
+        int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
         int k = end - start;
-        int total_nnz = nn_ptr[n];
 
-        // --- per-thread workspace ---
-        int tid = threadIdx.x; // thread-local index within block
-        double* cov_mat_between_neighbors = d_cov_mat_between_neighbors + tid * MAX_K * MAX_K;
-        double* cov_grad_mats_between_neighbors = d_cov_grad_mats_between_neighbors + tid * MAX_NUM_PAR_GP * MAX_K * MAX_K;
-        double* L = d_L + tid * MAX_K * MAX_K;
+        
+        // Each thread uses its slice in global memory
+        double* cov_mat_between_neighbors = d_cov_mat_between_neighbors + i * MAX_K * MAX_K;
+        double* cov_grad_mats_between_neighbors = d_cov_grad_mats_between_neighbors + i * MAX_NUM_PAR_GP * MAX_K * MAX_K;
+        double* L = d_L + i * MAX_K * MAX_K;
 
-        // --- small arrays on stack ---
+        // small arrays remain on the stack
         double cov_mat_obs_neighbors[MAX_K];
         double cov_grad_mats_obs_neighbors[MAX_NUM_PAR_GP * MAX_K];
         double y[MAX_K], z[MAX_K], A_i[MAX_K], A_i_grad_sigma2[MAX_K], A_i_grad[MAX_K];
-
-        // --- coordinates of i ---
+        // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
         if (i > 0) {
             // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
@@ -379,19 +376,19 @@ namespace GPBoost {
     }
 
     bool LaunchCalcCovFactorGradientVecchia_GPU(
-        const double shape,
-        const double C,
-        const int n,
-        const int dim_coords,
-        const double* __restrict__ coords,
-        const int* __restrict__ nn_ptr,
-        const int* __restrict__ nn_idx,
-        const double jitter,
-        const double nugget_var,
-        double* __restrict__ B_data,
-        double* __restrict__ D_data,
-        double* __restrict__ B_grad_data,
-        double* __restrict__ D_grad_data,
+        const double shape,                 // smoothness param
+        const double C,                     // range param
+        const int n,                        // number of data points
+        const int dim_coords,               // coordinate dimension
+        const double* __restrict__ coords,  // n * dim_coords, row-major (coords[i*dim + d])
+        const int* __restrict__ nn_ptr,     // length n+1  (nn_ptr[i+1]-nn_ptr[i] == k_i)
+        const int* __restrict__ nn_idx,     // flattened neighbor indices
+        const double jitter,                // e.g. 1e-8
+        const double nugget_var,            // e.g. 1e-8
+        double* __restrict__ B_data,        // flattened B rows: length == nn_ptr[n] (space preallocated)
+        double* __restrict__ D_data,    // length n
+        double* __restrict__ B_grad_data,   // length = num_params * total_nnz
+        double* __restrict__ D_grad_data,   // length = num_params * n
         const double* __restrict__ pars,
         const int num_par,
         const int num_par_gp,
@@ -402,83 +399,92 @@ namespace GPBoost {
         bool calc_gradient_nugget,
         bool exclude_marg_var_grad,
         bool ard,
-        const double EPSILON_NUMBERS
-    ) {
+        const double EPSILON_NUMBERS) {
+
 #define CUDA_CHECK(call)                                                     \
-    {                                                                            \
-        cudaError_t err = call;                                                  \
-        if (err != cudaSuccess) {                                                \
-            fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
-                    __FILE__, __LINE__, cudaGetErrorString(err));                \
-            exit(EXIT_FAILURE);                                                  \
-        }                                                                        \
-    }
-
-        CUDA_CHECK(cudaFree(0));  // force context creation
-        printf("CUDA context initialized\n");
-
-        // --- Kernel configuration ---
+{                                                                            \
+    cudaError_t err = call;                                                  \
+    if (err != cudaSuccess) {                                                \
+        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
+                __FILE__, __LINE__, cudaGetErrorString(err));fflush(stdout); \
+        exit(EXIT_FAILURE);                                                  \
+    }                                                                        \
+}
+        // berechne blocks/threads
         int threadsPerBlock = 128;
-        int max_blocks = 256; // max blocks to limit memory per launch
-        int chunkSize = threadsPerBlock * max_blocks; // number of i's per kernel launch
+        int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
-        for (int start_i = 0; start_i < n; start_i += chunkSize) {
-            int end_i = min(n, start_i + chunkSize);
-            int n_chunk = end_i - start_i;
+        // Total global threads
+        int totalThreads = threadsPerBlock * blocksPerGrid;
 
-            int blocksPerGrid = (n_chunk + threadsPerBlock - 1) / threadsPerBlock;
+        // Allocation sizes: one workspace per global thread
+        size_t size_cov = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
+        size_t size_cov_grad = (size_t)totalThreads * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double);
+        size_t size_L = (size_t)totalThreads * MAX_K * MAX_K * sizeof(double);
 
-            // --- Allocate workspace per block (small) ---
-            size_t size_cov_block = (size_t)threadsPerBlock * MAX_K * MAX_K * sizeof(double);
-            size_t size_cov_grad_block = (size_t)threadsPerBlock * MAX_NUM_PAR_GP * MAX_K * MAX_K * sizeof(double);
-            size_t size_L_block = (size_t)threadsPerBlock * MAX_K * MAX_K * sizeof(double);
+        // Allocate device memory
+        double* d_cov_mat_between_neighbors = nullptr;
+        double* d_cov_grad_mats_between_neighbors = nullptr;
+        double* d_L = nullptr;
 
-            double* d_cov_mat_between_neighbors = nullptr;
-            double* d_cov_grad_mats_between_neighbors = nullptr;
-            double* d_L = nullptr;
+        CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov));
+        CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad));
+        CUDA_CHECK(cudaMalloc(&d_L, size_L));
 
-            if (calc_cov_factor)
-                CUDA_CHECK(cudaMalloc(&d_cov_mat_between_neighbors, size_cov_block));
-            if (calc_gradient)
-                CUDA_CHECK(cudaMalloc(&d_cov_grad_mats_between_neighbors, size_cov_grad_block));
-            CUDA_CHECK(cudaMalloc(&d_L, size_L_block));
+        printf("Device memory allocated\n"); fflush(stdout);
 
-            // --- Launch kernel on this chunk ---
-            CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
-                shape, C, n_chunk, dim_coords,
-                coords + start_i * dim_coords, // offset for this chunk
-                nn_ptr + start_i,
-                nn_idx, // flattened neighbor indices
-                jitter, nugget_var,
-                B_data + nn_ptr[start_i], // offset in B_data
-                D_data + start_i,
-                B_grad_data + num_par_gp * nn_ptr[start_i],
-                D_grad_data + num_par_gp * start_i,
-                pars, num_par, num_par_gp,
-                gauss_likelihood, transf_scale,
-                calc_cov_factor, calc_gradient,
-                calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS,
-                d_cov_mat_between_neighbors,
-                d_cov_grad_mats_between_neighbors,
-                d_L
-                );
 
-            // Wait for kernel
-            cudaError_t execErr = cudaDeviceSynchronize();
-            if (execErr != cudaSuccess) {
-                printf("Kernel execution error: %s\n", cudaGetErrorString(execErr));
-                return false;
-            }
+        cudaEvent_t startEvent, stopEvent;
+        CUDA_CHECK(cudaEventCreate(&startEvent));
+        CUDA_CHECK(cudaEventCreate(&stopEvent));
 
-            // --- Free per-block workspace ---
-            if (calc_cov_factor) cudaFree(d_cov_mat_between_neighbors);
-            if (calc_gradient) cudaFree(d_cov_grad_mats_between_neighbors);
-            cudaFree(d_L);
+        // Record start
+        CUDA_CHECK(cudaEventRecord(startEvent, 0));
+
+
+        CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
+            shape, C, n, dim_coords,
+            coords, nn_ptr, nn_idx,
+            jitter, nugget_var,
+            B_data, D_data, B_grad_data, D_grad_data,
+            pars, num_par, num_par_gp,
+            gauss_likelihood, transf_scale,
+            calc_cov_factor, calc_gradient,
+            calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS,
+            d_cov_mat_between_neighbors, d_cov_grad_mats_between_neighbors, d_L
+            );
+
+        // Record stop
+        CUDA_CHECK(cudaEventRecord(stopEvent, 0));
+        CUDA_CHECK(cudaEventSynchronize(stopEvent));
+
+        // Compute elapsed time in milliseconds
+        float elapsedMs = 0.0f;
+        CUDA_CHECK(cudaEventElapsedTime(&elapsedMs, startEvent, stopEvent));
+        printf("Kernel runtime = %.3f ms\n", elapsedMs); fflush(stdout);
+
+        // Destroy events
+        CUDA_CHECK(cudaEventDestroy(startEvent));
+        CUDA_CHECK(cudaEventDestroy(stopEvent));
+
+        cudaError_t execErr = cudaDeviceSynchronize();
+        if (execErr != cudaSuccess) {
+            printf("Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
+            return false;
         }
-
         return true;
-    }
 
+        cudaFree(d_cov_mat_between_neighbors);
+        cudaFree(d_cov_grad_mats_between_neighbors);
+        cudaFree(d_L);
+
+        // Check for launch configuration/argument errors
+        cudaError_t launchErr = cudaGetLastError();
+        if (launchErr != cudaSuccess) {
+            printf("Kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
+            return false;
+        }
+    }
 
     bool try_matmul_gpu(const den_mat_t& A, const den_mat_t& B, den_mat_t& C) {
         int M = A.rows(), K = A.cols(), N = B.cols();
