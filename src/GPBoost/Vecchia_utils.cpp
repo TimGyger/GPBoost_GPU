@@ -1551,16 +1551,12 @@ namespace GPBoost {
 								if (!(exclude_marg_var_grad && ipar == 0)) {
 									A_i_grad = (chol_fact_between_neighbors.solve(cov_grad_mats_obs_neighbors[ind_first_par + ipar])).transpose() -
 										A_i * ((chol_fact_between_neighbors.solve(cov_grad_mats_between_neighbors[ind_first_par + ipar])).transpose());
-									den_mat_t A_i_grad01(1, num_nn);
-									den_mat_t A_i_grad02(1, num_nn);
-									A_i_grad01 = (chol_fact_between_neighbors.solve(cov_grad_mats_obs_neighbors[ind_first_par + ipar])).transpose();
-									A_i_grad02 = A_i * ((chol_fact_between_neighbors.solve(cov_grad_mats_between_neighbors[ind_first_par + ipar])).transpose());
 									for (int inn = 0; inn < num_nn; ++inn) {
 										B_grad_cluster_i[ind_first_par + ipar].coeffRef(i, nearest_neighbors_cluster_i[i][inn]) = -A_i_grad(0, inn);
 										if (i == 10) {
 											Log::REInfo("B_grad_cluster_i  %g ", B_grad_cluster_i[ind_first_par + ipar].coeffRef(i, nearest_neighbors_cluster_i[i][inn]));
-											Log::REInfo("rhs  %g %g %g", cov_grad_mats_obs_neighbors[ind_first_par + ipar].coeffRef(inn, 0), 
-												A_i_grad01.coeffRef(0, inn), A_i_grad02.coeffRef(0, inn));
+											Log::REInfo("rhs  %g %g", cov_grad_mats_obs_neighbors[ind_first_par + ipar].coeffRef(inn, 0), 
+												A_i_grad.coeffRef(0, inn));
 										}
 									}
 									if (ipar == 0) {
