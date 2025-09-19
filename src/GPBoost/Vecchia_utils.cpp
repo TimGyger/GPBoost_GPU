@@ -1322,16 +1322,42 @@ namespace GPBoost {
 					Log::REInfo("Computation = %g ", el_time);
 					//cudaDeviceSynchronize();
 
-					std::vector<double> h_B_data(total_nnz);
-					std::vector<double> h_D_data(num_re_cluster_i);
-					std::vector<double> h_B_grad_data(num_par_gp* total_nnz);
-					std::vector<double> h_D_grad_data(num_par_gp* num_re_cluster_i);
+					// --- Allocate pinned host buffers for results
+					double* h_B_data = nullptr;
+					double* h_D_data = nullptr;
+					double* h_B_grad_data = nullptr;
+					double* h_D_grad_data = nullptr;
 
-					// Copy device arrays back to host if needed
-					cudaMemcpy(h_B_data.data(), d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_data.data(), d_D_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_B_grad_data.data(), d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_grad_data.data(), d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					if (calc_cov_factor) {
+						CUDA_CHECK(cudaMallocHost(&h_B_data, total_nnz * sizeof(double)));
+						CUDA_CHECK(cudaMallocHost(&h_D_data, num_re_cluster_i * sizeof(double)));
+					}
+					if (calc_gradient) {
+						CUDA_CHECK(cudaMallocHost(&h_B_grad_data, num_par_gp * total_nnz * sizeof(double)));
+						CUDA_CHECK(cudaMallocHost(&h_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double)));
+					}
+
+					// --- Copy device to host
+					if (calc_cov_factor) {
+						CUDA_CHECK(cudaMemcpy(h_B_data, d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost));
+						CUDA_CHECK(cudaMemcpy(h_D_data, d_D_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost));
+					}
+					if (calc_gradient) {
+						CUDA_CHECK(cudaMemcpy(h_B_grad_data, d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost));
+						CUDA_CHECK(cudaMemcpy(h_D_grad_data, d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost));
+					}
+
+					// --- Optionally wrap into vectors for existing downstream code
+					std::vector<double> B_data_view(h_B_data, h_B_data + total_nnz);
+					std::vector<double> D_data_view(h_D_data, h_D_data + num_re_cluster_i);
+					std::vector<double> B_grad_data_view(h_B_grad_data, h_B_grad_data + (num_par_gp * total_nnz));
+					std::vector<double> D_grad_data_view(h_D_grad_data, h_D_grad_data + (num_par_gp * num_re_cluster_i));
+
+					// --- Free pinned host memory at the end
+					if (h_B_data) cudaFreeHost(h_B_data);
+					if (h_D_data) cudaFreeHost(h_D_data);
+					if (h_B_grad_data) cudaFreeHost(h_B_grad_data);
+					if (h_D_grad_data) cudaFreeHost(h_D_grad_data);
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 					Log::REInfo("Computation1 = %g ", el_time);
