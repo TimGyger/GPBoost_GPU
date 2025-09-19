@@ -1276,8 +1276,9 @@ namespace GPBoost {
 						}
 					}
 					// Coordinates
-					cudaMalloc(&d_coords, coords.size() * sizeof(double));
-					cudaMemcpy(d_coords, coords.data(), coords.size() * sizeof(double), cudaMemcpyHostToDevice);
+					Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
+					cudaMalloc(&d_coords, coords_row.size() * sizeof(double));
+					cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice);
 
 					// Covariance parameters
 					cudaMalloc(&d_pars, pars.size() * sizeof(double));
