@@ -1346,6 +1346,9 @@ namespace GPBoost {
 								if (calc_gradient) {
 									for (int ipar = 0; ipar < num_par_gp; ++ipar) {
 										B_grad_cluster_i[ipar].coeffRef(i, col) = h_B_grad_data[ipar * total_nnz + j];
+										if (i == 10) {
+											Log::REInfo("B_grad_cluster_i  %g ", B_grad_cluster_i[ipar].coeffRef(i, col));
+										}
 									}
 								}
 							}
@@ -1550,6 +1553,9 @@ namespace GPBoost {
 										A_i * ((chol_fact_between_neighbors.solve(cov_grad_mats_between_neighbors[ind_first_par + ipar])).transpose());
 									for (int inn = 0; inn < num_nn; ++inn) {
 										B_grad_cluster_i[ind_first_par + ipar].coeffRef(i, nearest_neighbors_cluster_i[i][inn]) = -A_i_grad(0, inn);
+										if (i == 10) {
+											Log::REInfo("B_grad_cluster_i  %g ", B_grad_cluster_i[ind_first_par + ipar].coeffRef(i, nearest_neighbors_cluster_i[i][inn]));
+										}
 									}
 									if (ipar == 0) {
 										D_grad_cluster_i[ind_first_par + ipar].coeffRef(i, i) -= ((A_i_grad * cov_mat_obs_neighbors)(0, 0) +
