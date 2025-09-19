@@ -1270,10 +1270,16 @@ namespace GPBoost {
 						cudaMemcpy(d_D_data, D_inv_cluster_i.diagonal().data(), num_re_cluster_i * sizeof(double), cudaMemcpyHostToDevice);
 					}
 					if (calc_gradient) {
+						std::vector<double> B_grad_flat(num_par_gp* total_nnz);
+						std::vector<double> D_grad_flat(num_par_gp* num_re_cluster_i);
 						for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-							cudaMemcpy(d_B_grad_data + ipar * total_nnz, B_grad_cluster_i[ipar].valuePtr(), total_nnz * sizeof(double), cudaMemcpyHostToDevice);
-							cudaMemcpy(d_D_grad_data + ipar * num_re_cluster_i, D_grad_cluster_i[ipar].diagonal().data(), num_re_cluster_i * sizeof(double), cudaMemcpyHostToDevice);
+							std::copy(B_grad_cluster_i[ipar].valuePtr(), B_grad_cluster_i[ipar].valuePtr() + total_nnz,
+								B_grad_flat.begin() + ipar * total_nnz);
+							std::copy(D_grad_cluster_i[ipar].diagonal().data(), D_grad_cluster_i[ipar].diagonal().data() + num_re_cluster_i,
+								D_grad_flat.begin() + ipar * num_re_cluster_i);
 						}
+						cudaMemcpy(d_B_grad_data, B_grad_flat.data(), B_grad_flat.size() * sizeof(double), cudaMemcpyHostToDevice);
+						cudaMemcpy(d_D_grad_data, D_grad_flat.data(), D_grad_flat.size() * sizeof(double), cudaMemcpyHostToDevice);
 					}
 					// Coordinates
 					Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;

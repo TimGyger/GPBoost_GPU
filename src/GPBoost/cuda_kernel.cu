@@ -199,9 +199,6 @@ namespace GPBoost {
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
-        if (i == 10) {
-            printf("Thread1\n");
-        }
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
         int total_nnz = nn_ptr[n]; // length of flattened neighbor list 
@@ -217,28 +214,14 @@ namespace GPBoost {
         double cov_mat_obs_neighbors[MAX_K];
         double cov_grad_mats_obs_neighbors[MAX_NUM_PAR_GP * MAX_K];
         double y[MAX_K], z[MAX_K], A_i[MAX_K], A_i_grad_sigma2[MAX_K], A_i_grad[MAX_K];
-        if (i == 10) {
-            printf("Thread2\n");
-        }
         // pointers
         const double* xi = coords + ((size_t)i) * dim_coords;
         if (i > 0) {
-            if (i == 10) {
-                const double* xi1 = coords + ((size_t)0) * dim_coords;
-                const double* xi2 = coords + ((size_t)1) * dim_coords;
-                const double* xi3 = coords + ((size_t)2) * dim_coords;
-                const double* xi4 = coords + ((size_t)3) * dim_coords;
-                const double* xi5 = coords + ((size_t)4) * dim_coords;
-                printf("Thread3 %g %g %g %g %g %g\n", xi[0], xi1[0], xi2[0], xi3[0], xi4[0], xi5[0]);
-            }
             // compute cov_mat_obs_neighbors[j] = Sigma_{i, neighbor_j}
             for (int jj = 0; jj < k; ++jj) {
                 int nj = nn_idx[start + jj];
                 const double* xj = coords + ((size_t)nj) * dim_coords;
                 double r = sqrt(squared_distance(xi, xj, dim_coords));
-                if (i == 10) {
-                    printf("Thread11 %g %i\n", xj[0], nj);
-                }
                 cov_mat_obs_neighbors[jj] = Matern_GPU(pars, r, shape, ard, EPSILON_NUMBERS);
                 if (calc_gradient) {
                     cov_grad_mats_obs_neighbors[0 * k + jj] = cov_mat_obs_neighbors[jj];
@@ -259,9 +242,6 @@ namespace GPBoost {
                     const double* xq = coords + ((size_t)idx_q) * dim_coords;
                     double r = sqrt(squared_distance(xp, xq, dim_coords));
                     double val = Matern_GPU(pars, r, shape, ard, EPSILON_NUMBERS);
-                    if (i == 10 && p == 1 && q == 0) {
-                        printf("Thread4 %g %g %g %g %g %i %i %g %g\n", pars[0], pars[1], shape, r, val, idx_p, idx_q, xp[0], xp[1]);
-                    }
                     cov_mat_between_neighbors[p * k + q] = val;
                     cov_mat_between_neighbors[q * k + p] = val;
                     if (calc_gradient) {
@@ -280,9 +260,6 @@ namespace GPBoost {
                     }
                 }
             }
-            if (i == 10) {
-                printf("Thread5 %g\n", cov_mat_between_neighbors[0]);
-            }
             if (gauss_likelihood) {
                 if (transf_scale) {
                     for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] += 1;
@@ -293,9 +270,6 @@ namespace GPBoost {
             }
             else {
                 for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] *= jitter;
-            }
-            if (i == 10) {
-                printf("Thread6 %g %g %g %g %g %i %i\n", cov_mat_between_neighbors[0], nugget_var, jitter, cov_mat_obs_neighbors[0], cov_mat_obs_neighbors[1], nn_idx[start + 0], nn_idx[start + 1]);
             }
         }
         double Sigma_ii = pars[0];
@@ -317,18 +291,8 @@ namespace GPBoost {
                 D_grad_data[num_par_gp - 1 + i] = 1.;
             }
         }
-        if (i == 10) {
-            printf("Thread7\n");
-        }
         if (calc_cov_factor) {
             D_data[i] = Sigma_ii;
-            if (i == 10) {
-                printf("Thread8\n");
-            }
-        }
-
-        if (i == 10) {
-            printf("Thread9 %g %g %g\n", cov_mat_between_neighbors[0], cov_mat_between_neighbors[1], cov_mat_between_neighbors[2]);
         }
         if (i > 0) {
             // --- Cholesky: compute L such that Sigma = L * L^T
@@ -342,9 +306,6 @@ namespace GPBoost {
 
             // --- Solve L^T * A_i = y  (back substitution)
             back_solve_lt(L, y, A_i, k);
-            if (i == 10) {
-                printf("Thread10\n");
-            }
             if (calc_gradient) {
                 if (calc_gradient_nugget) {
                     // --- Solve L * y = s^T  (forward substitution)
@@ -403,22 +364,13 @@ namespace GPBoost {
             // Now A_i = Sigma_nn^{-1} * s^T (k x 1)
             // B_i (1 x k) = (s * Sigma_nn^{-1}) = (A_i)^T  (because Sigma is symmetric)
             // store B at B_data[start + j] = -A_i[j]
-            if (i == 10) {
-                printf("Thread11\n");
-            }
             if (calc_cov_factor) {
                 for (int j = 0; j < k; ++j) {
                     B_data[start + j] = -A_i[j];
                 }
-                if (i == 10) {
-                    printf("Thread12\n");
-                }
                 double dot = 0.0;
                 for (int j = 0; j < k; ++j) dot += cov_mat_obs_neighbors[j] * A_i[j];
                 D_data[i] -= dot;
-                if (i == 10 || i == 100 || i == 1000) {
-                    printf("Thread %g and %g\n", D_data[i], dot);
-                }
             }
         }
     }
@@ -499,6 +451,14 @@ namespace GPBoost {
             d_cov_mat_between_neighbors, d_cov_grad_mats_between_neighbors, d_L
             );
 
+        cudaError_t execErr = cudaDeviceSynchronize();
+        if (execErr != cudaSuccess) {
+            printf("Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
+            return false;
+        }
+        printf("Thread0\n"); fflush(stdout);
+        return true;
+
         cudaFree(d_cov_mat_between_neighbors);
         cudaFree(d_cov_grad_mats_between_neighbors);
         cudaFree(d_L);
@@ -511,14 +471,7 @@ namespace GPBoost {
             return false;
         }
         printf("Thread0\n"); fflush(stdout);
-        // Now wait for kernel to finish
-        cudaError_t execErr = cudaDeviceSynchronize();
-        if (execErr != cudaSuccess) {
-            printf("Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
-            return false;
-        }
-        printf("Thread0\n"); fflush(stdout);
-        return true;
+        
     }
 
     bool try_matmul_gpu(const den_mat_t& A, const den_mat_t& B, den_mat_t& C) {
