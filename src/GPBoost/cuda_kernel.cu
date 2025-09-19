@@ -287,7 +287,7 @@ namespace GPBoost {
                 for (int dd = 0; dd < k; ++dd) cov_mat_between_neighbors[dd * k + dd] *= jitter;
             }
             if (i == 10) {
-                printf("Thread6 %g %g %g %g %g\n", cov_mat_between_neighbors[0], nugget_var, jitter, cov_mat_obs_neighbors[0], cov_mat_obs_neighbors[1]);
+                printf("Thread6 %g %g %g %g %g %i %i\n", cov_mat_between_neighbors[0], nugget_var, jitter, cov_mat_obs_neighbors[0], cov_mat_obs_neighbors[1], nn_idx[start + 0], nn_idx[start + 1]);
             }
         }
         double Sigma_ii = pars[0];
