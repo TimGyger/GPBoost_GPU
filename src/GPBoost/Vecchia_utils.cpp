@@ -1527,9 +1527,9 @@ namespace GPBoost {
 						cov_mat_between_neighbors.diagonal().array() *= JITTER_MULT_VECCHIA;//Avoid numerical problems when there is no nugget effect
 					}
 					if (i == 10) {
-						Log::REInfo("Thread2 %d %g %g %g %g %i %i", i, cov_mat_obs_neighbors.coeffRef(0, 0), cov_mat_obs_neighbors.coeffRef(1, 0), 
+						Log::REInfo("Thread2 %d %g %g %g %g %i %i %g %g", i, cov_mat_obs_neighbors.coeffRef(0, 0), cov_mat_obs_neighbors.coeffRef(1, 0), 
 							cov_mat_between_neighbors.coeffRef(0, 0), cov_mat_between_neighbors.coeffRef(1, 0),
-							nearest_neighbors_cluster_i[i][0], nearest_neighbors_cluster_i[i][1]);
+							nearest_neighbors_cluster_i[i][0], nearest_neighbors_cluster_i[i][1], coords_nn_i.coeffRef(0, 1), coords_nn_i.coeffRef(0, 2));
 					}
 					den_mat_t A_i(1, num_nn);
 					den_mat_t A_i_grad_sigma2;
