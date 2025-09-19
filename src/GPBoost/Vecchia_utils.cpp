@@ -1309,7 +1309,7 @@ namespace GPBoost {
 
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Preparation time until = %g %i ", el_time, total_nnz);
+					Log::REInfo("Preparation time until = %g", el_time);
 					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
 						d_coords, d_nn_ptr, d_nn_idx, JITTER_MULT_VECCHIA, nugget_var,
 						d_B_data, d_D_data, d_B_grad_data, d_D_grad_data,
@@ -1496,9 +1496,6 @@ namespace GPBoost {
 						D_inv_cluster_i.coeffRef(i, i) += d_comp_j;
 					}
 					if (calc_gradient) {
-						if (i == 10) {
-							Log::REInfo("T1  %g %g ", cov_grad_mats_obs_neighbors[1].coeffRef(0, 0), cov_grad_mats_obs_neighbors[1].coeffRef(1, 0));
-						}
 						if (!(exclude_marg_var_grad && j == 0)) {
 							if (transf_scale) {
 								D_grad_cluster_i[j * num_par_comp].coeffRef(i, i) = d_comp_j;//derivative of the covariance function wrt the variance. derivative of the covariance function wrt to range is zero on the diagonal
@@ -1553,11 +1550,6 @@ namespace GPBoost {
 										A_i * ((chol_fact_between_neighbors.solve(cov_grad_mats_between_neighbors[ind_first_par + ipar])).transpose());
 									for (int inn = 0; inn < num_nn; ++inn) {
 										B_grad_cluster_i[ind_first_par + ipar].coeffRef(i, nearest_neighbors_cluster_i[i][inn]) = -A_i_grad(0, inn);
-										if (i == 10) {
-											Log::REInfo("B_grad_cluster_i  %g ", B_grad_cluster_i[ind_first_par + ipar].coeffRef(i, nearest_neighbors_cluster_i[i][inn]));
-											Log::REInfo("rhs  %g %g", cov_grad_mats_obs_neighbors[ind_first_par + ipar].coeffRef(inn, 0), 
-												A_i_grad.coeffRef(0, inn));
-										}
 									}
 									if (ipar == 0) {
 										D_grad_cluster_i[ind_first_par + ipar].coeffRef(i, i) -= ((A_i_grad * cov_mat_obs_neighbors)(0, 0) +
@@ -1618,9 +1610,6 @@ namespace GPBoost {
 		end = std::chrono::steady_clock::now();//only for debugging
 		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 		Log::REInfo("Vecchia BDB time until = %g and val %g and %g and %g and %g ", el_time, D_inv_cluster_i.coeffRef(10, 10), D_inv_cluster_i.coeffRef(0, 0), D_inv_cluster_i.diagonal().minCoeff(), D_inv_cluster_i.diagonal().maxCoeff());
-		if (calc_gradient) {
-			Log::REInfo("val %g and %g and %g and %g ", D_grad_cluster_i[0].diagonal().minCoeff(), D_grad_cluster_i[0].diagonal().maxCoeff(), D_grad_cluster_i[1].diagonal().minCoeff(), D_grad_cluster_i[1].diagonal().maxCoeff());
-		}
 	}//end CalcCovFactorGradientVecchia
 
 	void CalcPredVecchiaObservedFirstOrder(bool CondObsOnly,
