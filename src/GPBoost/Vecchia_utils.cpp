@@ -1494,7 +1494,7 @@ namespace GPBoost {
 					}
 					if (calc_gradient) {
 						if (i == 10) {
-							Log::REInfo("T1  %g %g ", cov_grad_mats_obs_neighbors[1].coeffRef(0, 0), cov_grad_mats_obs_neighbors[1].coeffRef(0, 1));
+							Log::REInfo("T1  %g %g ", cov_grad_mats_obs_neighbors[1].coeffRef(0, 0), cov_grad_mats_obs_neighbors[1].coeffRef(1, 0));
 						}
 						if (!(exclude_marg_var_grad && j == 0)) {
 							if (transf_scale) {
@@ -1610,6 +1610,9 @@ namespace GPBoost {
 		end = std::chrono::steady_clock::now();//only for debugging
 		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 		Log::REInfo("Vecchia BDB time until = %g and val %g and %g and %g and %g ", el_time, D_inv_cluster_i.coeffRef(10, 10), D_inv_cluster_i.coeffRef(0, 0), D_inv_cluster_i.diagonal().minCoeff(), D_inv_cluster_i.diagonal().maxCoeff());
+		if (calc_gradient) {
+			Log::REInfo("val %g and %g and %g and %g ", D_grad_cluster_i[0].coeffRef(0, 0), D_grad_cluster_i[0].coeffRef(10, 10), D_grad_cluster_i[1].coeffRef(0, 0), D_grad_cluster_i[1].coeffRef(10, 10));
+		}
 	}//end CalcCovFactorGradientVecchia
 
 	void CalcPredVecchiaObservedFirstOrder(bool CondObsOnly,
