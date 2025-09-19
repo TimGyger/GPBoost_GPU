@@ -1611,7 +1611,7 @@ namespace GPBoost {
 		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 		Log::REInfo("Vecchia BDB time until = %g and val %g and %g and %g and %g ", el_time, D_inv_cluster_i.coeffRef(10, 10), D_inv_cluster_i.coeffRef(0, 0), D_inv_cluster_i.diagonal().minCoeff(), D_inv_cluster_i.diagonal().maxCoeff());
 		if (calc_gradient) {
-			Log::REInfo("val %g and %g and %g and %g ", D_grad_cluster_i[0].coeffRef(0, 0), D_grad_cluster_i[0].coeffRef(10, 10), D_grad_cluster_i[1].coeffRef(0, 0), D_grad_cluster_i[1].coeffRef(10, 10));
+			Log::REInfo("val %g and %g and %g and %g ", D_grad_cluster_i[0].diagonal().minCoeff(), D_grad_cluster_i[0].diagonal().maxCoeff(), D_grad_cluster_i[1].diagonal().minCoeff(), D_grad_cluster_i[1].diagonal().maxCoeff());
 		}
 	}//end CalcCovFactorGradientVecchia
 
