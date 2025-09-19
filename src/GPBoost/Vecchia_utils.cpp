@@ -1244,7 +1244,7 @@ namespace GPBoost {
 				}
 				if (GPU_success) {
 #ifdef USE_CUDA_GP
-					int total_nnz = B_cluster_i.nonZeros();
+					int total_nnz = B_cluster_i.nonZeros()- num_re_cluster_i;
 					// Flattened arrays on device
 					double* d_B_data = nullptr;
 					double* d_D_data = nullptr;
