@@ -1245,163 +1245,156 @@ namespace GPBoost {
 				if (GPU_success) {
 #ifdef USE_CUDA_GP
 					int total_nnz = B_cluster_i.nonZeros();
-					// Flattened arrays on device
-					double* d_B_data = nullptr;
-					double* d_D_data = nullptr;
-					double* d_B_grad_data = nullptr;
-					double* d_D_grad_data = nullptr;
-					double* d_coords = nullptr;  // device pointer to coordinates
-					double* d_pars = nullptr;    // covariance parameters
-					int* d_nn_ptr = nullptr;
-					int* d_nn_idx = nullptr;
 
-					// Allocate
+					// --- Sizes of each block ---
+					size_t size_B = calc_cov_factor ? total_nnz * sizeof(double) : 0;
+					size_t size_D = calc_cov_factor ? num_re_cluster_i * sizeof(double) : 0;
+					size_t size_B_grad = calc_gradient ? num_par_gp * total_nnz * sizeof(double) : 0;
+					size_t size_D_grad = calc_gradient ? num_par_gp * num_re_cluster_i * sizeof(double) : 0;
+					size_t total_size = size_B + size_D + size_B_grad + size_D_grad;
+
+					// --- Allocate single contiguous device buffer ---
+					double* d_buffer = nullptr;
+					if (total_size > 0) cudaMalloc(&d_buffer, total_size);
+
+					// --- Set pointers inside device buffer ---
+					double* d_B_data = d_buffer;
+					double* d_D_data = (double*)((char*)d_B_data + size_B);
+					double* d_B_grad_data = (double*)((char*)d_D_data + size_D);
+					double* d_D_grad_data = (double*)((char*)d_B_grad_data + size_B_grad);
+
+					// --- Allocate single contiguous host buffer ---
+					std::vector<double> h_buffer(total_size / sizeof(double));
+					double* h_B_data = h_buffer.data();
+					double* h_D_data = (double*)((char*)h_B_data + size_B);
+					double* h_B_grad_data = (double*)((char*)h_D_data + size_D);
+					double* h_D_grad_data = (double*)((char*)h_B_grad_data + size_B_grad);
+
+					// --- Fill host buffer from sparse matrices ---
 					if (calc_cov_factor) {
-						cudaMalloc(&d_B_data, total_nnz * sizeof(double));
-						cudaMalloc(&d_D_data, num_re_cluster_i * sizeof(double));
+						std::copy(B_cluster_i.valuePtr(), B_cluster_i.valuePtr() + total_nnz, h_B_data);
+						std::copy(D_inv_cluster_i.diagonal().data(),
+							D_inv_cluster_i.diagonal().data() + num_re_cluster_i,
+							h_D_data);
 					}
 					if (calc_gradient) {
-						cudaMalloc(&d_B_grad_data, num_par_gp * total_nnz * sizeof(double));
-						cudaMalloc(&d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double));
-					}
-					// Copy host arrays to device
-					if (calc_cov_factor) {
-						cudaMemcpy(d_B_data, B_cluster_i.valuePtr(), total_nnz * sizeof(double), cudaMemcpyHostToDevice);
-						cudaMemcpy(d_D_data, D_inv_cluster_i.diagonal().data(), num_re_cluster_i * sizeof(double), cudaMemcpyHostToDevice);
-					}
-					if (calc_gradient) {
-						std::vector<double> B_grad_flat(num_par_gp* total_nnz);
-						std::vector<double> D_grad_flat(num_par_gp* num_re_cluster_i);
 						for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-							std::copy(B_grad_cluster_i[ipar].valuePtr(), B_grad_cluster_i[ipar].valuePtr() + total_nnz,
-								B_grad_flat.begin() + ipar * total_nnz);
-							std::copy(D_grad_cluster_i[ipar].diagonal().data(), D_grad_cluster_i[ipar].diagonal().data() + num_re_cluster_i,
-								D_grad_flat.begin() + ipar * num_re_cluster_i);
+							std::copy(B_grad_cluster_i[ipar].valuePtr(),
+								B_grad_cluster_i[ipar].valuePtr() + total_nnz,
+								h_B_grad_data + ipar * total_nnz);
+							std::copy(D_grad_cluster_i[ipar].diagonal().data(),
+								D_grad_cluster_i[ipar].diagonal().data() + num_re_cluster_i,
+								h_D_grad_data + ipar * num_re_cluster_i);
 						}
-						cudaMemcpy(d_B_grad_data, B_grad_flat.data(), B_grad_flat.size() * sizeof(double), cudaMemcpyHostToDevice);
-						cudaMemcpy(d_D_grad_data, D_grad_flat.data(), D_grad_flat.size() * sizeof(double), cudaMemcpyHostToDevice);
 					}
-					// Coordinates
+
+					// --- Copy all to GPU in one bulk transfer ---
+					cudaMemcpy(d_buffer, h_buffer.data(), total_size, cudaMemcpyHostToDevice);
+
+					// --- Coordinates (row-major) ---
 					Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
+					double* d_coords = nullptr;
 					cudaMalloc(&d_coords, coords_row.size() * sizeof(double));
 					cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice);
 
-					// Covariance parameters
+					// --- Covariance parameters ---
+					double* d_pars = nullptr;
 					cudaMalloc(&d_pars, pars.size() * sizeof(double));
 					cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice);
-					// Neighbors
+
+					// --- Neighbors ---
 					int num_nn_ptr = nearest_neighbors_cluster_i.size() + 1;
 					std::vector<int> nn_ptr(num_nn_ptr, 0);
 					std::vector<int> nn_idx(total_nnz, 0);
-					// fill nn_ptr and nn_idx from nearest_neighbors_cluster_i
 					int idx = 0;
 					for (int i = 0; i < (int)nearest_neighbors_cluster_i.size(); ++i) {
 						nn_ptr[i + 1] = nn_ptr[i] + nearest_neighbors_cluster_i[i].size();
-						for (int j : nearest_neighbors_cluster_i[i]) {
-							nn_idx[idx++] = j;
-						}
+						for (int j : nearest_neighbors_cluster_i[i]) nn_idx[idx++] = j;
 					}
+					int* d_nn_ptr = nullptr;
+					int* d_nn_idx = nullptr;
 					cudaMalloc(&d_nn_ptr, nn_ptr.size() * sizeof(int));
 					cudaMemcpy(d_nn_ptr, nn_ptr.data(), nn_ptr.size() * sizeof(int), cudaMemcpyHostToDevice);
-
 					cudaMalloc(&d_nn_idx, nn_idx.size() * sizeof(int));
 					cudaMemcpy(d_nn_idx, nn_idx.data(), nn_idx.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-					end = std::chrono::steady_clock::now();//only for debugging
-					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Preparation time until = %g ", el_time);
-					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
+					// --- Launch GPU kernel ---
+					GPU_success = LaunchCalcCovFactorGradientVecchia_GPU(
+						cov_fct_shape, cm, num_re_cluster_i, coords.cols(),
 						d_coords, d_nn_ptr, d_nn_idx, JITTER_MULT_VECCHIA, nugget_var,
 						d_B_data, d_D_data, d_B_grad_data, d_D_grad_data,
 						d_pars, num_par_comp, num_par_gp, gauss_likelihood, transf_scale,
 						calc_cov_factor, calc_gradient, calc_gradient_nugget,
-						exclude_marg_var_grad, ard, EPSILON_NUMBERS);
+						exclude_marg_var_grad, ard, EPSILON_NUMBERS
+					);
 
-					end = std::chrono::steady_clock::now();//only for debugging
-					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Computation = %g ", el_time);
-					//cudaDeviceSynchronize();
+					// --- Fill sparse matrices directly from bulk host buffer ---
+					std::vector<Eigen::Triplet<double>> triplets_B;
+					std::vector<std::vector<Eigen::Triplet<double>>> triplets_B_grad(num_par_gp);
+					std::vector<Eigen::Triplet<double>> triplets_D;
+					std::vector<std::vector<Eigen::Triplet<double>>> triplets_D_grad(num_par_gp);
 
-					// --- Allocate pinned host buffers for results
-					double* h_B_data = nullptr;
-					double* h_D_data = nullptr;
-					double* h_B_grad_data = nullptr;
-					double* h_D_grad_data = nullptr;
+#pragma omp parallel
+					{
+						std::vector<Eigen::Triplet<double>> local_B;
+						std::vector<std::vector<Eigen::Triplet<double>>> local_B_grad(num_par_gp);
+						std::vector<Eigen::Triplet<double>> local_D;
+						std::vector<std::vector<Eigen::Triplet<double>>> local_D_grad(num_par_gp);
 
-					if (calc_cov_factor) {
-						CUDA_CHECK(cudaMallocHost(&h_B_data, total_nnz * sizeof(double)));
-						CUDA_CHECK(cudaMallocHost(&h_D_data, num_re_cluster_i * sizeof(double)));
-					}
-					if (calc_gradient) {
-						CUDA_CHECK(cudaMallocHost(&h_B_grad_data, num_par_gp * total_nnz * sizeof(double)));
-						CUDA_CHECK(cudaMallocHost(&h_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double)));
-					}
-
-					// --- Copy device to host
-					if (calc_cov_factor) {
-						CUDA_CHECK(cudaMemcpy(h_B_data, d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost));
-						CUDA_CHECK(cudaMemcpy(h_D_data, d_D_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost));
-					}
-					if (calc_gradient) {
-						CUDA_CHECK(cudaMemcpy(h_B_grad_data, d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost));
-						CUDA_CHECK(cudaMemcpy(h_D_grad_data, d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost));
-					}
-
-					// --- Optionally wrap into vectors for existing downstream code
-					std::vector<double> B_data_view(h_B_data, h_B_data + total_nnz);
-					std::vector<double> D_data_view(h_D_data, h_D_data + num_re_cluster_i);
-					std::vector<double> B_grad_data_view(h_B_grad_data, h_B_grad_data + (num_par_gp * total_nnz));
-					std::vector<double> D_grad_data_view(h_D_grad_data, h_D_grad_data + (num_par_gp * num_re_cluster_i));
-
-					// --- Free pinned host memory at the end
-					if (h_B_data) cudaFreeHost(h_B_data);
-					if (h_D_data) cudaFreeHost(h_D_data);
-					if (h_B_grad_data) cudaFreeHost(h_B_grad_data);
-					if (h_D_grad_data) cudaFreeHost(h_D_grad_data);
-					end = std::chrono::steady_clock::now();//only for debugging
-					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Computation1 = %g ", el_time);
-					if (GPU_success) {
-#pragma omp parallel for
+#pragma omp for nowait
 						for (int i = 0; i < num_re_cluster_i; ++i) {
 							for (int j = nn_ptr[i]; j < nn_ptr[i + 1]; ++j) {
 								int col = nn_idx[j];
-								if (calc_cov_factor) {
-									B_cluster_i.coeffRef(i, col) = h_B_data[j];
-								}
+								if (calc_cov_factor) local_B.emplace_back(i, col, h_B_data[j]);
 								if (calc_gradient) {
-									for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-										B_grad_cluster_i[ipar].coeffRef(i, col) = h_B_grad_data[ipar * total_nnz + j];
-									}
+									for (int ipar = 0; ipar < num_par_gp; ++ipar)
+										local_B_grad[ipar].emplace_back(i, col,
+											h_B_grad_data[ipar * total_nnz + j]);
 								}
 							}
-							if (calc_cov_factor) {
-								D_inv_cluster_i.coeffRef(i, i) += h_D_data[i];
-								D_inv_cluster_i.coeffRef(i, i) = 1./ D_inv_cluster_i.coeffRef(i, i);
-							}
+							if (calc_cov_factor) local_D.emplace_back(i, i, 1. / h_D_data[i]);
 							if (calc_gradient) {
-								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-									D_grad_cluster_i[ipar].coeffRef(i, i) += h_D_grad_data[ipar * num_re_cluster_i + i];
-								}
+								for (int ipar = 0; ipar < num_par_gp; ++ipar)
+									local_D_grad[ipar].emplace_back(i, i,
+										h_D_grad_data[ipar * num_re_cluster_i + i]);
 							}
 						}
 
-						// --- Step 3: Optional compression (already initialized, but safe) ---
-						if (calc_cov_factor) B_cluster_i.makeCompressed();
-						if (calc_gradient) {
-							for (int ipar = 0; ipar < num_par_gp; ++ipar) {
-								B_grad_cluster_i[ipar].makeCompressed();
-								D_grad_cluster_i[ipar].makeCompressed();
+#pragma omp critical
+						{
+							if (calc_cov_factor) {
+								triplets_B.insert(triplets_B.end(), local_B.begin(), local_B.end());
+								triplets_D.insert(triplets_D.end(), local_D.begin(), local_D.end());
+							}
+							if (calc_gradient) {
+								for (int ipar = 0; ipar < num_par_gp; ++ipar) {
+									triplets_B_grad[ipar].insert(triplets_B_grad[ipar].end(),
+										local_B_grad[ipar].begin(),
+										local_B_grad[ipar].end());
+									triplets_D_grad[ipar].insert(triplets_D_grad[ipar].end(),
+										local_D_grad[ipar].begin(),
+										local_D_grad[ipar].end());
+								}
 							}
 						}
+					} // end parallel
+
+					// --- Build sparse matrices once ---
+					if (calc_cov_factor) {
+						B_cluster_i.setFromTriplets(triplets_B.begin(), triplets_B.end());
+						D_inv_cluster_i.setFromTriplets(triplets_D.begin(), triplets_D.end());
 					}
-					end = std::chrono::steady_clock::now();//only for debugging
-					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Computation2 = %g ", el_time);
-					cudaFree(d_B_data);
-					cudaFree(d_B_grad_data);
-					cudaFree(d_D_data);
-					cudaFree(d_D_grad_data);
+					if (calc_gradient) {
+						for (int ipar = 0; ipar < num_par_gp; ++ipar) {
+							B_grad_cluster_i[ipar].setFromTriplets(
+								triplets_B_grad[ipar].begin(), triplets_B_grad[ipar].end());
+							D_grad_cluster_i[ipar].setFromTriplets(
+								triplets_D_grad[ipar].begin(), triplets_D_grad[ipar].end());
+						}
+					}
+
+					// --- Cleanup ---
+					cudaFree(d_buffer);
 					cudaFree(d_coords);
 					cudaFree(d_pars);
 					cudaFree(d_nn_ptr);
