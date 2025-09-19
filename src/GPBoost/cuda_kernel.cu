@@ -453,9 +453,9 @@ namespace GPBoost {
         }
         return true;
 
-        cudaFree(d_cov_mat_between_neighbors);
-        cudaFree(d_cov_grad_mats_between_neighbors);
-        cudaFree(d_L);
+        //cudaFree(d_cov_mat_between_neighbors);
+        //cudaFree(d_cov_grad_mats_between_neighbors);
+        //cudaFree(d_L);
 
         // Check for launch configuration/argument errors
         cudaError_t launchErr = cudaGetLastError();
