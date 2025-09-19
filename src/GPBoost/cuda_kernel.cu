@@ -230,6 +230,10 @@ namespace GPBoost {
                     }
                 }
             }
+            if (i == 10)
+            {
+                printf("grad %g %g\n", cov_grad_mats_obs_neighbors[1 * k + 0], cov_grad_mats_obs_neighbors[1 * k + 1]);
+            }
             // compute Sigma_nn (symmetric)
             for (int p = 0; p < k; ++p) {
                 for (int q = 0; q <= p; ++q) {
