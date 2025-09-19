@@ -1453,10 +1453,10 @@ namespace GPBoost {
 											}
 										}
 									}
+									if (i == 10) {
+										Log::REInfo("T1  %g %g ", cov_grad_mats_between_neighbors[1].coeffRef(0, 0), cov_grad_mats_between_neighbors[1].coeffRef(0, 1));
+									}
 								}
-							}
-							if (i == 10) {
-								Log::REInfo("T1  %g %g ", cov_grad_mats_between_neighbors[1].coeffRef(0, 0), cov_grad_mats_between_neighbors[1].coeffRef(0, 1));
 							}
 						}
 						else {//random coefficient GPs
