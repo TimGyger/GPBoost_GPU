@@ -336,7 +336,7 @@ namespace GPBoost {
                         for (int j = 0; j < k; ++j) {
                             if (i == 10)
                             {
-                                printf("grad %g %g\n", A_i_grad[j], z[j]);
+                                printf("grad1 %g %g\n", A_i_grad[j], z[j]);
                             }
                             A_i_grad[j] -= z[j];
                         }

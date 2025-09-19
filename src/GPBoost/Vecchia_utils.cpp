@@ -1560,7 +1560,7 @@ namespace GPBoost {
 										if (i == 10) {
 											Log::REInfo("B_grad_cluster_i  %g ", B_grad_cluster_i[ind_first_par + ipar].coeffRef(i, nearest_neighbors_cluster_i[i][inn]));
 											Log::REInfo("rhs  %g %g %g", cov_grad_mats_obs_neighbors[ind_first_par + ipar].coeffRef(inn, 0), 
-												A_i_grad01.coeffRef(1, 0), A_i_grad02.coeffRef(1, 0));
+												A_i_grad01.coeffRef(0, inn), A_i_grad02.coeffRef(0, inn));
 										}
 									}
 									if (ipar == 0) {
