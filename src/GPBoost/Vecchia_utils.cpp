@@ -1328,10 +1328,14 @@ namespace GPBoost {
 					std::vector<double> h_D_grad_data(num_par_gp* num_re_cluster_i);
 
 					// Copy device arrays back to host if needed
-					cudaMemcpy(h_B_data.data(), d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_data.data(), d_D_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_B_grad_data.data(), d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
-					cudaMemcpy(h_D_grad_data.data(), d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					if (calc_cov_factor) {
+						cudaMemcpy(h_B_data.data(), d_B_data, total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
+						cudaMemcpy(h_D_data.data(), d_D_data, num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					}
+					if (calc_gradient) {
+						cudaMemcpy(h_B_grad_data.data(), d_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyDeviceToHost);
+						cudaMemcpy(h_D_grad_data.data(), d_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyDeviceToHost);
+					}
 					end = std::chrono::steady_clock::now();//only for debugging
 					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 					Log::REInfo("Computation1 = %g ", el_time);
