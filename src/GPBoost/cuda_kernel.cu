@@ -196,7 +196,6 @@ namespace GPBoost {
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
-        printf("grad %i\n", i);
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
         int total_nnz = nn_ptr[n];
@@ -441,6 +440,20 @@ namespace GPBoost {
             calc_cov_factor, calc_gradient,
             calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS
             );
+
+        // Check launch errors immediately
+        cudaError_t launchErr = cudaGetLastError();
+        if (launchErr != cudaSuccess) {
+            fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
+            return false;
+        }
+
+        // Sync to catch runtime errors
+        cudaError_t execErr = cudaDeviceSynchronize();
+        if (execErr != cudaSuccess) {
+            fprintf(stderr, "Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
+            return false;
+        }
         printf("Test3\n"); fflush(stdout);
         // Record stop
         CUDA_CHECK(cudaEventRecord(stopEvent, 0));
@@ -455,11 +468,6 @@ namespace GPBoost {
         CUDA_CHECK(cudaEventDestroy(startEvent));
         CUDA_CHECK(cudaEventDestroy(stopEvent));
         printf("Test4\n"); fflush(stdout);
-        cudaError_t execErr = cudaDeviceSynchronize();
-        if (execErr != cudaSuccess) {
-            printf("Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
-            return false;
-        }
         return true;
 
         //cudaFree(d_cov_mat_between_neighbors);
