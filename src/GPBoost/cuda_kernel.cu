@@ -420,7 +420,7 @@ namespace GPBoost {
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
         
-        printf("Test\n"); fflush(stdout);
+        printf("Test %i %i\n", threadsPerBlock, blocksPerGrid); fflush(stdout);
 
         cudaEvent_t startEvent, stopEvent;
         CUDA_CHECK(cudaEventCreate(&startEvent));
