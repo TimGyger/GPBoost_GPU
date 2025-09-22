@@ -1216,13 +1216,7 @@ namespace GPBoost {
 			// Determine constants for derivative of covariance
 			double cov_fct_shape = re_comp->CovFunctionShape();
 			vec_t pars = re_comp->CovPars();
-			den_mat_t coords;
-			if (!(re_comp->HasIsotropicCovFct())) {
-				re_comp->GetScaledCoordinates(coords);
-			}
-			else {
-				coords = re_comp->GetCoords();
-			}
+			den_mat_t coords = re_comp->GetCoords();
 			double cm = 0.;
 			bool GPU_success = true;
 			if (num_gp_total > 1) {
