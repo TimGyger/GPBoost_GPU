@@ -22,7 +22,7 @@ using LightGBM::Log;
 #define MAX_K 32
 
 // Maximum number of GP parameters
-#define MAX_NUM_PAR_GP 16
+#define MAX_NUM_PAR_GP 8
 
 namespace GPBoost {
 
