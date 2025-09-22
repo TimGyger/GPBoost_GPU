@@ -420,16 +420,17 @@ namespace GPBoost {
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
         
-
+        printf("Test\n"); fflush(stdout);
 
         cudaEvent_t startEvent, stopEvent;
         CUDA_CHECK(cudaEventCreate(&startEvent));
         CUDA_CHECK(cudaEventCreate(&stopEvent));
 
+        printf("Test1\n"); fflush(stdout);
         // Record start
         CUDA_CHECK(cudaEventRecord(startEvent, 0));
 
-
+        printf("Test2\n"); fflush(stdout);
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
             shape, C, n, dim_coords,
             coords, nn_ptr, nn_idx,
@@ -440,7 +441,7 @@ namespace GPBoost {
             calc_cov_factor, calc_gradient,
             calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS
             );
-
+        printf("Test3\n"); fflush(stdout);
         // Record stop
         CUDA_CHECK(cudaEventRecord(stopEvent, 0));
         CUDA_CHECK(cudaEventSynchronize(stopEvent));
@@ -453,7 +454,7 @@ namespace GPBoost {
         // Destroy events
         CUDA_CHECK(cudaEventDestroy(startEvent));
         CUDA_CHECK(cudaEventDestroy(stopEvent));
-
+        printf("Test4\n"); fflush(stdout);
         cudaError_t execErr = cudaDeviceSynchronize();
         if (execErr != cudaSuccess) {
             printf("Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
