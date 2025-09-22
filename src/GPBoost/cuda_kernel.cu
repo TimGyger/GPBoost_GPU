@@ -196,7 +196,7 @@ namespace GPBoost {
     ) {
         int i = blockIdx.x * blockDim.x + threadIdx.x;
         if (i >= n) return;
-
+        printf("grad %i\n", i);
         int start = nn_ptr[i];
         int end = nn_ptr[i + 1];
         int total_nnz = nn_ptr[n];
