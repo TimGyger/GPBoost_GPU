@@ -1216,7 +1216,13 @@ namespace GPBoost {
 			// Determine constants for derivative of covariance
 			double cov_fct_shape = re_comp->CovFunctionShape();
 			vec_t pars = re_comp->CovPars();
-			den_mat_t coords = re_comp->GetCoords();
+			den_mat_t coords;
+			if (!(re_comp->HasIsotropicCovFct())) {
+				re_comp->GetScaledCoordinates(coords);
+			}
+			else {
+				coords = re_comp->GetCoords();
+			}
 			double cm = 0.;
 			bool GPU_success = true;
 			if (num_gp_total > 1) {
@@ -1346,9 +1352,6 @@ namespace GPBoost {
 								if (calc_gradient) {
 									for (int ipar = 0; ipar < num_par_gp; ++ipar) {
 										B_grad_cluster_i[ipar].coeffRef(i, col) = h_B_grad_data[ipar * total_nnz + j];
-										if (i == 10) {
-											Log::REInfo("B_grad_cluster_i  %g ", B_grad_cluster_i[ipar].coeffRef(i, col));
-										}
 									}
 								}
 							}
