@@ -22,7 +22,7 @@ using LightGBM::Log;
 #define MAX_K 32
 
 // Maximum number of GP parameters
-#define MAX_NUM_PAR_GP 8
+#define MAX_NUM_PAR_GP 16
 
 namespace GPBoost {
 
@@ -229,10 +229,6 @@ namespace GPBoost {
                     }
                 }
             }
-            if (i == 10)
-            {
-                printf("grad %g %g\n", cov_grad_mats_obs_neighbors[1 * k + 0], cov_grad_mats_obs_neighbors[1 * k + 1]);
-            }
             // compute Sigma_nn (symmetric)
             for (int p = 0; p < k; ++p) {
                 for (int q = 0; q <= p; ++q) {
@@ -336,10 +332,6 @@ namespace GPBoost {
                             A_i_grad[j] -= z[j];
                         }
                         for (int j = 0; j < k; ++j) {
-                            if (i == 10)
-                            {
-                                printf("grad1 %g %g\n", A_i_grad[j], z[j]);
-                            }
                             B_grad_data[ipar * total_nnz + start + j] = -A_i_grad[j];
                         }
                         double dot_grad_1 = 0.0;
@@ -414,22 +406,20 @@ namespace GPBoost {
         exit(EXIT_FAILURE);                                                  \
     }                                                                        \
 }
-        // berechne blocks/threads
+
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
-        
-        printf("Test %i %i\n", threadsPerBlock, blocksPerGrid); fflush(stdout);
+        printf("Launching kernel: blocks=%d, threads=%d, n=%d\n",
+            blocksPerGrid, threadsPerBlock, n);
+        fflush(stdout);
 
         cudaEvent_t startEvent, stopEvent;
         CUDA_CHECK(cudaEventCreate(&startEvent));
         CUDA_CHECK(cudaEventCreate(&stopEvent));
 
-        printf("Test1\n"); fflush(stdout);
-        // Record start
         CUDA_CHECK(cudaEventRecord(startEvent, 0));
 
-        printf("Test2\n"); fflush(stdout);
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
             shape, C, n, dim_coords,
             coords, nn_ptr, nn_idx,
@@ -441,38 +431,26 @@ namespace GPBoost {
             calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS
             );
 
-        // Check launch errors immediately
+        // Launch check
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
 
-        // Sync to catch runtime errors
-        cudaError_t execErr = cudaDeviceSynchronize();
-        if (execErr != cudaSuccess) {
-            fprintf(stderr, "Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
-            return false;
-        }
-        printf("Test3\n"); fflush(stdout);
-        // Record stop
+        // Sync check
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+        // Only record stop if kernel succeeded
         CUDA_CHECK(cudaEventRecord(stopEvent, 0));
         CUDA_CHECK(cudaEventSynchronize(stopEvent));
 
-        // Compute elapsed time in milliseconds
         float elapsedMs = 0.0f;
         CUDA_CHECK(cudaEventElapsedTime(&elapsedMs, startEvent, stopEvent));
         printf("Kernel runtime = %.3f ms\n", elapsedMs); fflush(stdout);
 
-        // Destroy events
         CUDA_CHECK(cudaEventDestroy(startEvent));
         CUDA_CHECK(cudaEventDestroy(stopEvent));
-        printf("Test4\n"); fflush(stdout);
-        return true;
-
-        //cudaFree(d_cov_mat_between_neighbors);
-        //cudaFree(d_cov_grad_mats_between_neighbors);
-        //cudaFree(d_L);
 
     }
 
