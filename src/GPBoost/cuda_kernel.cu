@@ -474,12 +474,6 @@ namespace GPBoost {
         //cudaFree(d_cov_grad_mats_between_neighbors);
         //cudaFree(d_L);
 
-        // Check for launch configuration/argument errors
-        cudaError_t launchErr = cudaGetLastError();
-        if (launchErr != cudaSuccess) {
-            printf("Kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
-            return false;
-        }
     }
 
     bool try_matmul_gpu(const den_mat_t& A, const den_mat_t& B, den_mat_t& C) {
