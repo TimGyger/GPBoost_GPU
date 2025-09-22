@@ -410,15 +410,9 @@ namespace GPBoost {
         int threadsPerBlock = 128;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
-        printf("Launching kernel: blocks=%d, threads=%d, n=%d\n",
+        printf("Launching kernel with %d blocks, %d threads (n=%d)\n",
             blocksPerGrid, threadsPerBlock, n);
         fflush(stdout);
-
-        cudaEvent_t startEvent, stopEvent;
-        CUDA_CHECK(cudaEventCreate(&startEvent));
-        CUDA_CHECK(cudaEventCreate(&stopEvent));
-
-        CUDA_CHECK(cudaEventRecord(startEvent, 0));
 
         CalcCovFactorGradientVecchia_GPU << <blocksPerGrid, threadsPerBlock >> > (
             shape, C, n, dim_coords,
@@ -431,26 +425,25 @@ namespace GPBoost {
             calc_gradient_nugget, exclude_marg_var_grad, ard, EPSILON_NUMBERS
             );
 
-        // Launch check
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             fprintf(stderr, "Kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
 
-        // Sync check
-        CUDA_CHECK(cudaDeviceSynchronize());
+        cudaError_t execErr = cudaDeviceSynchronize();
+        if (execErr != cudaSuccess) {
+            fprintf(stderr, "Kernel execution error: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
+            return false;
+        }
 
-        // Only record stop if kernel succeeded
-        CUDA_CHECK(cudaEventRecord(stopEvent, 0));
-        CUDA_CHECK(cudaEventSynchronize(stopEvent));
+        printf("Kernel completed successfully.\n"); fflush(stdout);
+        // Record stop
+         return true;
 
-        float elapsedMs = 0.0f;
-        CUDA_CHECK(cudaEventElapsedTime(&elapsedMs, startEvent, stopEvent));
-        printf("Kernel runtime = %.3f ms\n", elapsedMs); fflush(stdout);
-
-        CUDA_CHECK(cudaEventDestroy(startEvent));
-        CUDA_CHECK(cudaEventDestroy(stopEvent));
+        //cudaFree(d_cov_mat_between_neighbors);
+        //cudaFree(d_cov_grad_mats_between_neighbors);
+        //cudaFree(d_L);
 
     }
 
