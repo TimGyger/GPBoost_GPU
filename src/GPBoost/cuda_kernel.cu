@@ -345,16 +345,6 @@ namespace GPBoost {
         rng_states[tid] = local_state;
     }
 
-#define CUDA_CHECK(call)                                                     \
-{                                                                            \
-    cudaError_t err = call;                                                  \
-    if (err != cudaSuccess) {                                                \
-        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
-                __FILE__, __LINE__, cudaGetErrorString(err));fflush(stdout); \
-        return false;                                                        \
-    }                                                                        \
-}
-
     bool find_nearest_neighbors_Vecchia_fast_GPU(
         const den_mat_t& coords,
         int num_data,
@@ -374,6 +364,16 @@ namespace GPBoost {
         bool check_has_duplicates,
         int neighbor_selection_int
     ) {
+
+#define CUDA_CHECK(call)                                                     \
+{                                                                            \
+    cudaError_t err = call;                                                  \
+    if (err != cudaSuccess) {                                                \
+        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
+                __FILE__, __LINE__, cudaGetErrorString(err));fflush(stdout); \
+        return false;                                                        \
+    }                                                                        \
+}
         int total_threads = num_data - start_at;
         int num_neighbors_total = num_nearest_neighbors + num_non_nearest_neighbors;
 
