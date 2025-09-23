@@ -1247,21 +1247,23 @@ namespace GPBoost {
 						GPU_success = false;
 					}
 				}
-				else if (ard && calc_gradient) {
-					for (int ipar = 1; ipar < (int)(pars.size() - 1); ipar++) {
-						if (TwoNumbersAreEqual<double>(cov_fct_shape, 0.5)) {
-							cm = transf_scale ? -1. : (nugget_var * pars[ipar]);
+				else if (ard) {
+					if (calc_gradient) {
+						for (int ipar = 1; ipar < (int)(pars.size() - 1); ipar++) {
+							if (TwoNumbersAreEqual<double>(cov_fct_shape, 0.5)) {
+								cm = transf_scale ? -1. : (nugget_var * pars[ipar]);
+							}
+							else if (TwoNumbersAreEqual<double>(cov_fct_shape, 1.5)) {
+								cm = transf_scale ? (-1. * pars[0]) : (nugget_var * pars[0] * pars[ipar] / sqrt(3.));
+							}
+							else if (TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) {
+								cm = transf_scale ? (-1. / 3. * pars[0]) : (nugget_var / 3. * pars[0] * pars[ipar] / sqrt(5.));
+							}
+							else {
+								GPU_success = false;
+							}
+							cm_vec[ipar - 1] = cm;
 						}
-						else if (TwoNumbersAreEqual<double>(cov_fct_shape, 1.5)) {
-							cm = transf_scale ? (-1. * pars[0]) : (nugget_var * pars[0] * pars[ipar] / sqrt(3.));
-						}
-						else if (TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) {
-							cm = transf_scale ? (-1. / 3. * pars[0]) : (nugget_var / 3. * pars[0] * pars[ipar] / sqrt(5.));
-						}
-						else {
-							GPU_success = false;
-						}
-						cm_vec[ipar-1] = cm;
 					}
 				}
 				else {
