@@ -421,7 +421,7 @@ namespace GPBoost {
     }                                                                        \
 }
 
-        int threadsPerBlock = 128;
+        int threadsPerBlock = 256;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
 
         printf("Launching kernel with %d blocks, %d threads (n=%d)\n",

@@ -1225,6 +1225,7 @@ namespace GPBoost {
 			}
 			double cm = 0.;
 			vec_t cm_vec((int)(pars.size() - 1));
+			cm_vec.setZero();
 			bool GPU_success = true;
 			if (num_gp_total > 1) {
 				GPU_success = false;
