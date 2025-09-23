@@ -1249,7 +1249,7 @@ namespace GPBoost {
 				}
 				else if (ard) {
 					if (calc_gradient) {
-						for (int ipar = 1; ipar < (int)(pars.size() - 1); ipar++) {
+						for (int ipar = 1; ipar < (int)pars.size(); ipar++) {
 							if (TwoNumbersAreEqual<double>(cov_fct_shape, 0.5)) {
 								cm = transf_scale ? -1. : (nugget_var * pars[ipar]);
 							}
