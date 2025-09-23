@@ -87,8 +87,8 @@ namespace GPBoost {
         double range_dist = range * d;
         if (ard) {
             double dist_par = a[par - 1] - b[par - 1];
-            if (dist_par < EPSILON_NUMBERS) return 0.0;
             dist_par = dist_par * dist_par;
+            if (dist_par < EPSILON_NUMBERS) return 0.0;
             if (shape == 0.5) {
                 return C * dist_par / d * exp(-range_dist);
             }

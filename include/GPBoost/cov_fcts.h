@@ -1595,7 +1595,6 @@ namespace GPBoost {
 					cm = transf_scale ? 1. : (-nugget_var * pars[ind_range + 1] / sqrt(2. * shape_));
 					cm *= pars[0] * const_;
 				}
-				Log::REInfo("CM = %g", cm);
 			}// end (cov_fct_type_ == "matern_ard"
 			else if (cov_fct_type_ == "gaussian_ard") {
 				CHECK(ind_range >= 0 && ind_range < dim_coords);

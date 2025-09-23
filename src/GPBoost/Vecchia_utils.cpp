@@ -1262,7 +1262,6 @@ namespace GPBoost {
 							GPU_success = false;
 						}
 						cm_vec[ipar - 1] = cm;
-						Log::REInfo("CM = %g", cm);
 					}
 				}
 				else {
