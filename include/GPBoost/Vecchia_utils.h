@@ -22,6 +22,27 @@
 namespace GPBoost {
 
 #ifdef USE_CUDA_GP
+
+	bool find_nearest_neighbors_Vecchia_fast_GPU(
+		const den_mat_t& coords,
+		int num_data,
+		int num_nearest_neighbors,
+		int num_non_nearest_neighbors,
+		int num_close_neighbors,
+		int start_at,
+		int end_search_at,
+		int dim_coords,
+		const std::vector<int>& sort_sum,
+		const std::vector<int>& sort_inv_sum,
+		const std::vector<double>& coords_sum,
+		std::vector<std::vector<int>>& neighbors,
+		std::vector<den_mat_t>& dist_obs_neighbors,
+		bool save_distances,
+		bool& has_duplicates,
+		bool check_has_duplicates,
+		int neighbor_selection_int
+	);
+
 	bool LaunchCalcCovFactorGradientVecchia_GPU(
 		const double shape,                 // smoothness param
 		const double C,                     // range param
@@ -194,7 +215,8 @@ namespace GPBoost {
 		bool& check_has_duplicates,
 		const string_t& neighbor_selection,
 		RNG_t& gen,
-		bool save_distances);
+		bool save_distances,
+		bool GPU_use);
 
 	void find_nearest_neighbors_fast_internal(const int i,
 		const int num_data,
@@ -272,7 +294,8 @@ namespace GPBoost {
 		double cov_fct_taper_shape,
 		bool apply_tapering,
 		bool save_distances_isotropic_cov_fct,
-		string_t& gp_approx);
+		string_t& gp_approx,
+		bool GPU_use);
 
 	/*!
 	* \brief Update the nearest neighbors based on scaled coorrdinates
@@ -306,7 +329,8 @@ namespace GPBoost {
 		const den_mat_t& chol_ip_cross_cov,
 		std::vector<den_mat_t>& dist_obs_neighbors_cluster_i,
 		std::vector<den_mat_t>& dist_between_neighbors_cluster_i,
-		bool save_distances_isotropic_cov_fct);
+		bool save_distances_isotropic_cov_fct,
+		bool GPU_use);
 
 	/*!
 	* \brief Calculate matrices A and D_inv and their derivatives for the Vecchia approximation for one cluster (independent realization of GP)
@@ -480,7 +504,8 @@ namespace GPBoost {
 		vec_t& pred_mean,
 		den_mat_t& pred_cov,
 		vec_t& pred_var,
-		bool save_distances_isotropic_cov_fct);
+		bool save_distances_isotropic_cov_fct,
+		bool GPU_use);
 
 	/*!
 	* \brief Calculate predictions (conditional mean and covariance matrix) using the Vecchia approximation for the latent process when observed locations appear first in the ordering (only for Gaussian likelihoods)
@@ -517,7 +542,8 @@ namespace GPBoost {
 		vec_t& pred_mean,
 		den_mat_t& pred_cov,
 		vec_t& pred_var,
-		bool save_distances_isotropic_cov_fct);
+		bool save_distances_isotropic_cov_fct,
+		bool GPU_use);
 
 }  // namespace GPBoost
 
