@@ -651,6 +651,9 @@ namespace GPBoost {
 		const string_t& neighbor_selection,
 		RNG_t& gen,
 		bool save_distances) {
+		std::chrono::steady_clock::time_point begin, end;//only for debugging
+		double el_time;//only for debugging
+		begin = std::chrono::steady_clock::now();//only for debugging
 		CHECK((int)neighbors.size() == (num_data - start_at));
 		if (save_distances) {
 			CHECK((int)dist_obs_neighbors.size() == (num_data - start_at));
@@ -718,6 +721,9 @@ namespace GPBoost {
 				neighbors[i - start_at].resize(num_neighbors);
 			}
 		}
+		end = std::chrono::steady_clock::now();//only for debugging
+		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+		Log::REInfo("Test1 = %g ", el_time);
 		//Find neighbors for those points where the conditioning set (=candidate neighbors) is larger than 'num_neighbors'
 		if (num_data > num_neighbors) {
 			int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;//The first point (first_i) for which the search is done is the point with index (num_neighbors + 1) or start_at
@@ -791,6 +797,10 @@ namespace GPBoost {
 				}//end selection of non-nearest neighbors
 			}//end parallel for loop for finding neighbors
 		}
+
+		end = std::chrono::steady_clock::now();//only for debugging
+		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+		Log::REInfo("Test2 = %g ", el_time);
 		// Calculate distances among neighbors
 		int first_i = (start_at == 0) ? 1 : start_at;
 #pragma omp parallel for schedule(static)
@@ -828,6 +838,10 @@ namespace GPBoost {
 		if (check_has_duplicates) {
 			check_has_duplicates = has_duplicates;
 		}
+
+		end = std::chrono::steady_clock::now();//only for debugging
+		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+		Log::REInfo("Test3 = %g ", el_time);
 	}//end find_nearest_neighbors_Vecchia_fast
 
 	void find_nearest_neighbors_fast_internal(const int i,
