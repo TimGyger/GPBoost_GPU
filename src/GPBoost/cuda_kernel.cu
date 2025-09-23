@@ -299,7 +299,7 @@ namespace GPBoost {
                 (neighbor_selection == 2 && num_cand_neighbors <= num_close_neighbors)) {
                 // Sample excluding nearest neighbors
                 int* non_nearest = new int[num_non_nearest_neighbors];
-                SampleIntNoReplaceExcludeSomeIndices(
+                SampleIntNoReplaceExcludeSomeIndices_GPU(
                     num_cand_neighbors, num_non_nearest_neighbors,
                     &local_state, non_nearest,
                     neighbors_i, num_nearest_neighbors
@@ -312,7 +312,7 @@ namespace GPBoost {
             else {
                 // Sample within close pool
                 int* ind_non_nearest = new int[num_non_nearest_neighbors];
-                SampleIntNoReplace(
+                SampleIntNoReplace_GPU(
                     num_close_neighbors - num_nearest_neighbors,
                     num_non_nearest_neighbors,
                     &local_state, ind_non_nearest
