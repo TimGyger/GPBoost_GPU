@@ -36,6 +36,7 @@ namespace GPBoost {
 		double* __restrict__ D_data,    // length n
 		double* __restrict__ B_grad_data,   // length = num_params * total_nnz
 		double* __restrict__ D_grad_data,   // length = num_params * n
+		const double* __restrict__ C_vec,
 		const double* __restrict__ pars,
 		const int num_par,
 		const int num_par_gp,
