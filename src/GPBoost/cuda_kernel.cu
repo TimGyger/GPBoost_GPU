@@ -183,6 +183,7 @@ namespace GPBoost {
         double* __restrict__ B_grad_data,   // length = num_params * total_nnz
         double* __restrict__ D_grad_data,   // length = num_params * n
         const double* __restrict__ pars,
+        const double* __restrict__ C_vec,
         const int num_par,
         const int num_par_gp,
         bool gauss_likelihood,
@@ -200,7 +201,7 @@ namespace GPBoost {
         int end = nn_ptr[i + 1];
         int total_nnz = nn_ptr[n];
         int k = end - start;
-
+        double Const = 1.;
         // --- Stack-allocated temporary arrays per thread ---
         double cov_mat_between_neighbors[MAX_K * MAX_K];
         double cov_grad_mats_between_neighbors[MAX_NUM_PAR_GP * MAX_K * MAX_K];
@@ -225,7 +226,13 @@ namespace GPBoost {
                         cov_grad_mats_obs_neighbors[0 * k + jj] /= pars[0];
                     }
                     for (int ipar = 1; ipar < num_par; ++ipar) {
-                        cov_grad_mats_obs_neighbors[ipar * k + jj] = GradientRangeMatern_GPU(xi, xj, pars, r, C, shape, ipar, ard, EPSILON_NUMBERS);
+                        if (ard) {
+                            Const = C_vec[ipar - 1];
+                        }
+                        else {
+                            Const = C;
+                        }
+                        cov_grad_mats_obs_neighbors[ipar * k + jj] = GradientRangeMatern_GPU(xi, xj, pars, r, Const, shape, ipar, ard, EPSILON_NUMBERS);
                     }
                 }
             }
@@ -248,7 +255,13 @@ namespace GPBoost {
                             cov_grad_mats_between_neighbors[0 * k * k + q * k + p] /= pars[0];
                         }
                         for (int ipar = 1; ipar < num_par; ++ipar) {
-                            cov_grad_mats_between_neighbors[ipar * k * k + p * k + q] = GradientRangeMatern_GPU(xp, xq, pars, r, C, shape, ipar, ard, EPSILON_NUMBERS);
+                            if (ard) {
+                                Const = C_vec[ipar - 1];
+                            }
+                            else {
+                                Const = C;
+                            }
+                            cov_grad_mats_between_neighbors[ipar * k * k + p * k + q] = GradientRangeMatern_GPU(xp, xq, pars, r, Const, shape, ipar, ard, EPSILON_NUMBERS);
                             if (p != q) {
                                 cov_grad_mats_between_neighbors[ipar * k * k + q * k + p] = cov_grad_mats_between_neighbors[ipar * k * k + p * k + q];
                             }
@@ -385,6 +398,7 @@ namespace GPBoost {
         double* __restrict__ D_data,    // length n
         double* __restrict__ B_grad_data,   // length = num_params * total_nnz
         double* __restrict__ D_grad_data,   // length = num_params * n
+        const double* __restrict__ C_vec,
         const double* __restrict__ pars,
         const int num_par,
         const int num_par_gp,
@@ -418,7 +432,7 @@ namespace GPBoost {
             shape, C, n, dim_coords,
             coords, nn_ptr, nn_idx,
             jitter, nugget_var,
-            B_data, D_data, B_grad_data, D_grad_data,
+            B_data, D_data, B_grad_data, D_grad_data, C_vec,
             pars, num_par, num_par_gp,
             gauss_likelihood, transf_scale,
             calc_cov_factor, calc_gradient,
