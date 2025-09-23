@@ -19,6 +19,11 @@
 #include <LightGBM/utils/log.h>
 using LightGBM::Log;
 
+// Define infinity
+#ifndef CUDART_INF
+#define CUDART_INF __longlong_as_double(0x7ff0000000000000ULL)
+#endif
+
 // Maximum neighbor size per data point
 #define MAX_K 32
 
@@ -169,7 +174,7 @@ namespace GPBoost {
                         if (sed < nn_square_dist[num_nearest_neighbors - 1]) {
                             nn_square_dist[num_nearest_neighbors - 1] = sed;
                             neighbors_i[num_nearest_neighbors - 1] = cand;
-                            SortVectorsDecreasing_GPU<double>(nn_square_dist, neighbors_i, num_nearest_neighbors);
+                            SortVectorsDecreasing_GPU(nn_square_dist, neighbors_i, num_nearest_neighbors);
                         }
                     }
                 }
@@ -193,7 +198,7 @@ namespace GPBoost {
                         if (sed < nn_square_dist[num_nearest_neighbors - 1]) {
                             nn_square_dist[num_nearest_neighbors - 1] = sed;
                             neighbors_i[num_nearest_neighbors - 1] = cand;
-                            SortVectorsDecreasing_GPU<double>(nn_square_dist, neighbors_i, num_nearest_neighbors);
+                            SortVectorsDecreasing_GPU(nn_square_dist, neighbors_i, num_nearest_neighbors);
                         }
                     }
                 }
@@ -253,7 +258,7 @@ namespace GPBoost {
             int* tmp_neighbors = new int[num_close_neighbors];
             double* tmp_dists = new double[num_close_neighbors];
 
-            find_nearest_neighbors_fast_internal(
+            find_nearest_neighbors_fast_internal_GPU(
                 i, num_data, num_close_neighbors, end_search_at,
                 dim_coords, coords, sort_sum, sort_inv_sum, coords_sum,
                 tmp_neighbors, tmp_dists
@@ -270,7 +275,7 @@ namespace GPBoost {
         }
         else {
             // default or half_random
-            find_nearest_neighbors_fast_internal(
+            find_nearest_neighbors_fast_internal_GPU(
                 i, num_data, num_nearest_neighbors, end_search_at,
                 dim_coords, coords, sort_sum, sort_inv_sum, coords_sum,
                 neighbors_i, nn_square_dist
@@ -345,6 +350,16 @@ namespace GPBoost {
         rng_states[tid] = local_state;
     }
 
+#define CUDA_CHECK(call)                                                     \
+{                                                                            \
+    cudaError_t err = call;                                                  \
+    if (err != cudaSuccess) {                                                \
+        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
+                __FILE__, __LINE__, cudaGetErrorString(err));fflush(stdout); \
+        return false;                                                        \
+    }                                                                        \
+}
+
     bool find_nearest_neighbors_Vecchia_fast_GPU(
         const den_mat_t& coords,
         int num_data,
@@ -365,15 +380,7 @@ namespace GPBoost {
         int neighbor_selection_int
     ) {
 
-#define CUDA_CHECK(call)                                                     \
-{                                                                            \
-    cudaError_t err = call;                                                  \
-    if (err != cudaSuccess) {                                                \
-        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
-                __FILE__, __LINE__, cudaGetErrorString(err));fflush(stdout); \
-        return false;                                                        \
-    }                                                                        \
-}
+
         int total_threads = num_data - start_at;
         int num_neighbors_total = num_nearest_neighbors + num_non_nearest_neighbors;
 
@@ -879,15 +886,6 @@ namespace GPBoost {
         bool ard,
         const double EPSILON_NUMBERS) {
 
-#define CUDA_CHECK(call)                                                     \
-{                                                                            \
-    cudaError_t err = call;                                                  \
-    if (err != cudaSuccess) {                                                \
-        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
-                __FILE__, __LINE__, cudaGetErrorString(err));fflush(stdout); \
-        exit(EXIT_FAILURE);                                                  \
-    }                                                                        \
-}
 
         int threadsPerBlock = 256;
         int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
