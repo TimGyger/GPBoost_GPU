@@ -1248,22 +1248,21 @@ namespace GPBoost {
 					}
 				}
 				else if (ard) {
-					if (calc_gradient) {
-						for (int ipar = 1; ipar < (int)pars.size(); ipar++) {
-							if (TwoNumbersAreEqual<double>(cov_fct_shape, 0.5)) {
-								cm = transf_scale ? -1. : (nugget_var * pars[ipar]);
-							}
-							else if (TwoNumbersAreEqual<double>(cov_fct_shape, 1.5)) {
-								cm = transf_scale ? (-1. * pars[0]) : (nugget_var * pars[0] * pars[ipar] / sqrt(3.));
-							}
-							else if (TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) {
-								cm = transf_scale ? (-1. / 3. * pars[0]) : (nugget_var / 3. * pars[0] * pars[ipar] / sqrt(5.));
-							}
-							else {
-								GPU_success = false;
-							}
-							cm_vec[ipar - 1] = cm;
+					for (int ipar = 1; ipar < (int)pars.size(); ipar++) {
+						if (TwoNumbersAreEqual<double>(cov_fct_shape, 0.5)) {
+							cm = transf_scale ? -1. : (nugget_var * pars[ipar]);
 						}
+						else if (TwoNumbersAreEqual<double>(cov_fct_shape, 1.5)) {
+							cm = transf_scale ? (-1. * pars[0]) : (nugget_var * pars[0] * pars[ipar] / sqrt(3.));
+						}
+						else if (TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) {
+							cm = transf_scale ? (-1. / 3. * pars[0]) : (nugget_var / 3. * pars[0] * pars[ipar] / sqrt(5.));
+						}
+						else {
+							GPU_success = false;
+						}
+						cm_vec[ipar - 1] = cm;
+						Log::REInfo("CM = %g", cm);
 					}
 				}
 				else {
@@ -1282,7 +1281,6 @@ namespace GPBoost {
 					double* d_cm = nullptr;    
 					int* d_nn_ptr = nullptr;
 					int* d_nn_idx = nullptr;
-					Log::REInfo("Test");
 					// Allocate
 					if (calc_cov_factor) {
 						cudaMalloc(&d_B_data, total_nnz * sizeof(double));
@@ -1300,7 +1298,6 @@ namespace GPBoost {
 					double* h_D_data = nullptr;
 					double* h_B_grad_data = nullptr;
 					double* h_D_grad_data = nullptr;
-					Log::REInfo("Test1");
 					if (calc_cov_factor) {
 						cudaMallocHost(&h_B_data, total_nnz * sizeof(double));
 						cudaMallocHost(&h_D_data, num_re_cluster_i * sizeof(double));
@@ -1332,7 +1329,6 @@ namespace GPBoost {
 						cudaMemcpy(d_B_grad_data, h_B_grad_data, num_par_gp * total_nnz * sizeof(double), cudaMemcpyHostToDevice);
 						cudaMemcpy(d_D_grad_data, h_D_grad_data, num_par_gp * num_re_cluster_i * sizeof(double), cudaMemcpyHostToDevice);
 					}
-					Log::REInfo("Test2");
 					// Coordinates
 					Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
 					cudaMalloc(&d_coords, coords_row.size() * sizeof(double));
@@ -1355,7 +1351,6 @@ namespace GPBoost {
 							nn_idx[idx++] = j;
 						}
 					}
-					Log::REInfo("Test3");
 					cudaMalloc(&d_nn_ptr, nn_ptr.size() * sizeof(int));
 					cudaMemcpy(d_nn_ptr, nn_ptr.data(), nn_ptr.size() * sizeof(int), cudaMemcpyHostToDevice);
 
