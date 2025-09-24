@@ -722,9 +722,6 @@ namespace GPBoost {
 				neighbors[i - start_at].resize(num_neighbors);
 			}
 		}
-		end = std::chrono::steady_clock::now();//only for debugging
-		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-		Log::REInfo("Test1 = %g ", el_time);
 		//Find neighbors for those points where the conditioning set (=candidate neighbors) is larger than 'num_neighbors'
 		if (num_data > num_neighbors) {
 			if (GPU_use && neighbor_selection == "nearest") {
@@ -815,19 +812,6 @@ namespace GPBoost {
 				}//end parallel for loop for finding neighbors
 			}
 		}
-		for (int j = 0; j < std::min(num_neighbors, 5); j++) {
-			Log::REInfo("a %i %i ", j, neighbors[999][j]);
-		}
-		for (int j = 0; j < std::min(num_neighbors, 5); j++) {
-			Log::REInfo("b %i %i ",j, neighbors[1000][j]);
-		}
-		for (int j = 0; j < std::min(num_neighbors, 5); j++) {
-			Log::REInfo("c %i %i ", j, neighbors[1001][j]);
-		}
-		end = std::chrono::steady_clock::now();//only for debugging
-		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-		Log::REInfo("Test2 = %g ", el_time);
-		std::this_thread::sleep_for(std::chrono::seconds(1));
 		// Calculate distances among neighbors
 		int first_i = (start_at == 0) ? 1 : start_at;
 #pragma omp parallel for schedule(static)
@@ -865,7 +849,6 @@ namespace GPBoost {
 		if (check_has_duplicates) {
 			check_has_duplicates = has_duplicates;
 		}
-
 		end = std::chrono::steady_clock::now();//only for debugging
 		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 		Log::REInfo("Test3 = %g ", el_time);

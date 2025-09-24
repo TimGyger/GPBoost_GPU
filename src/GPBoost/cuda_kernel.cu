@@ -7,8 +7,6 @@
 * Licensed under the Apache License Version 2.0. See LICENSE file in the project root for license information.
 */
 #ifdef USE_CUDA_GP
-#include <thread>
-#include <chrono>
 #include <cstdio>
 #include <math.h>
 #include <GPBoost/GP_utils.h>
@@ -216,7 +214,6 @@ namespace GPBoost {
         bool check_has_duplicates
     ) {
 
-        printf("Test\n"); fflush(stdout);
         int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;
         int total_threads = num_data - first_i;
         // --- allocate device memory ---
@@ -227,8 +224,7 @@ namespace GPBoost {
         int* d_neighbors = nullptr;
         double* d_dist_obs_neighbors = nullptr;
         int* d_has_duplicates = nullptr;
-        printf("Test1 %i\n", first_i); fflush(stdout);
-
+        
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
         CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_sort_sum, num_data * sizeof(int)));
@@ -246,7 +242,6 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_sort_inv_sum, sort_inv_sum.data(), num_data * sizeof(int), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_coords_sum, coords_sum.data(), num_data * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemset(d_has_duplicates, 0, sizeof(int)));
-        printf("Test2\n"); fflush(stdout);
         int threads = 256;
         int blocks = (total_threads + threads - 1) / threads;
         // --- run neighbor kernel ---
@@ -268,8 +263,6 @@ namespace GPBoost {
             check_has_duplicates,
             d_has_duplicates
             );
-        printf("Test4\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             fprintf(stderr, "Neighbor kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
@@ -290,8 +283,6 @@ namespace GPBoost {
             h_dist.resize(total_threads * num_neighbors);
             CUDA_CHECK(cudaMemcpy(h_dist.data(), d_dist_obs_neighbors, h_dist.size() * sizeof(double), cudaMemcpyDeviceToHost));
         }
-        printf("Test5 %i %i\n", h_neighbors.size(), neighbors.size()); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         int h_has_duplicates = 0;
         if (check_has_duplicates) {
             CUDA_CHECK(cudaMemcpy(&h_has_duplicates, d_has_duplicates, sizeof(int), cudaMemcpyDeviceToHost));
@@ -311,8 +302,6 @@ namespace GPBoost {
                 }
             }
         }
-        printf("Test6\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         // --- cleanup ---
         cudaFree(d_coords);
         cudaFree(d_sort_sum);
@@ -321,8 +310,6 @@ namespace GPBoost {
         cudaFree(d_neighbors);
         if (save_distances) cudaFree(d_dist_obs_neighbors);
         cudaFree(d_has_duplicates);
-        printf("Test7\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         return true;
     }
 
