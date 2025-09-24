@@ -241,7 +241,7 @@ namespace GPBoost {
         CUDA_CHECK(cudaMalloc(&d_has_duplicates, sizeof(int)));
 
         // --- copy host data to device ---
-        CUDA_CHECK(cudaMemcpy(d_coords, coords.data(), num_data * dim_coords * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), num_data * dim_coords * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_sort_sum, sort_sum.data(), num_data * sizeof(int), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_sort_inv_sum, sort_inv_sum.data(), num_data * sizeof(int), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_coords_sum, coords_sum.data(), num_data * sizeof(double), cudaMemcpyHostToDevice));
@@ -290,7 +290,7 @@ namespace GPBoost {
             h_dist.resize(total_threads * num_neighbors);
             CUDA_CHECK(cudaMemcpy(h_dist.data(), d_dist_obs_neighbors, h_dist.size() * sizeof(double), cudaMemcpyDeviceToHost));
         }
-        printf("Test5\n"); fflush(stdout);
+        printf("Test5 %i %i\n", h_neighbors.size(), neighbors.size()); fflush(stdout);
         std::this_thread::sleep_for(std::chrono::seconds(1));
         int h_has_duplicates = 0;
         if (check_has_duplicates) {

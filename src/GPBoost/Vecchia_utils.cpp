@@ -728,16 +728,18 @@ namespace GPBoost {
 		//Find neighbors for those points where the conditioning set (=candidate neighbors) is larger than 'num_neighbors'
 		if (num_data > num_neighbors) {
 			if (GPU_use && neighbor_selection == "nearest") {
-				bool success = false;
+				if (num_data > num_neighbors + 1) {
+					bool success = false;
 #ifdef USE_CUDA_GP
-				success = find_nearest_neighbors_Vecchia_fast_GPU(coords,num_data, num_neighbors,num_close_neighbors,
-					start_at,end_search_at,dim_coords,sort_sum,sort_inv_sum,coords_sum,neighbors,dist_obs_neighbors,save_distances,has_duplicates,
-					check_has_duplicates);
+					success = find_nearest_neighbors_Vecchia_fast_GPU(coords, num_data, num_neighbors, num_close_neighbors,
+						start_at, end_search_at, dim_coords, sort_sum, sort_inv_sum, coords_sum, neighbors, dist_obs_neighbors, save_distances, has_duplicates,
+						check_has_duplicates);
 #endif 
-				if (!success) {
-					Log::REInfo("GPU neighbor search failed! Continuing on CPU!");
-					find_nearest_neighbors_Vecchia_fast(coords, num_data, num_neighbors, neighbors, dist_obs_neighbors, dist_between_neighbors,
-						start_at, end_search_at, check_has_duplicates, neighbor_selection, gen, save_distances, false);
+					if (!success) {
+						Log::REInfo("GPU neighbor search failed! Continuing on CPU!");
+						find_nearest_neighbors_Vecchia_fast(coords, num_data, num_neighbors, neighbors, dist_obs_neighbors, dist_between_neighbors,
+							start_at, end_search_at, check_has_duplicates, neighbor_selection, gen, save_distances, false);
+					}
 				}
 			}
 			else {
