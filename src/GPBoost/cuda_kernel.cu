@@ -7,6 +7,8 @@
 * Licensed under the Apache License Version 2.0. See LICENSE file in the project root for license information.
 */
 #ifdef USE_CUDA_GP
+#include <thread>
+#include <chrono>
 #include <cstdio>
 #include <math.h>
 #include <GPBoost/GP_utils.h>
@@ -454,6 +456,7 @@ namespace GPBoost {
             d_rng_states
             );
         printf("Test4\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             fprintf(stderr, "Neighbor kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
@@ -475,6 +478,7 @@ namespace GPBoost {
             CUDA_CHECK(cudaMemcpy(h_dist.data(), d_dist_obs_neighbors, h_dist.size() * sizeof(double), cudaMemcpyDeviceToHost));
         }
         printf("Test5\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         int h_has_duplicates = 0;
         if (check_has_duplicates) {
             CUDA_CHECK(cudaMemcpy(&h_has_duplicates, d_has_duplicates, sizeof(int), cudaMemcpyDeviceToHost));
@@ -495,7 +499,8 @@ namespace GPBoost {
                 }
             }
         }
-
+        printf("Test6\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         // --- cleanup ---
         cudaFree(d_coords);
         cudaFree(d_sort_sum);
@@ -505,7 +510,8 @@ namespace GPBoost {
         if (save_distances) cudaFree(d_dist_obs_neighbors);
         cudaFree(d_has_duplicates);
         cudaFree(d_rng_states);
-
+        printf("Test7\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         return true;
     }
 
