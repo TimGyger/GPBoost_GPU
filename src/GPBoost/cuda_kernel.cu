@@ -326,7 +326,6 @@ namespace GPBoost {
         cudaFree(d_neighbors);
         if (save_distances) cudaFree(d_dist_obs_neighbors);
         cudaFree(d_has_duplicates);
-        cudaFree(d_rng_states);
         printf("Test7\n"); fflush(stdout);
         std::this_thread::sleep_for(std::chrono::seconds(1));
         return true;
