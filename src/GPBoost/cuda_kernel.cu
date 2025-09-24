@@ -30,6 +30,10 @@ using LightGBM::Log;
 // Maximum number of GP parameters
 #define MAX_NUM_PAR_GP 16
 
+#define MAX_NEAREST 32
+#define MAX_CLOSE   320   // e.g. 10 * MAX_NEAREST
+#define MAX_NON_NEAREST (MAX_NEAREST/2)
+
 namespace GPBoost {
 
 
@@ -229,7 +233,7 @@ namespace GPBoost {
         bool save_distances,
         bool check_has_duplicates,
         int* has_duplicates_flag,     // global flag (0 or 1)
-        int neighbor_selection,       // 0 = default, 1 = half_random, 2 = half_random_close_neighbors
+        int neighbor_selection,       // 0 = nearest, 1 = half_random, 2 = half_random_close_neighbors
         curandState* rng_states       // one RNG state per thread
     ) {
         int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -243,10 +247,29 @@ namespace GPBoost {
 
         // output pointers for this thread
         int* neighbors_i = &neighbors[(i - start_at) * (num_nearest_neighbors + num_non_nearest_neighbors)];
-        double* dist_i = &dist_obs_neighbors[(i - start_at) * (num_nearest_neighbors + num_non_nearest_neighbors)];
+        double* dist_i = nullptr;
+        if (save_distances) {
+            dist_i = &dist_obs_neighbors[(i - start_at) * (num_nearest_neighbors + num_non_nearest_neighbors)];
+        }
 
-        // storage for nearest neighbors
-        double* nn_square_dist = new double[num_nearest_neighbors];
+        // ================================
+        // Replace dynamic allocations here
+        // ================================
+        double nn_square_dist[MAX_NEAREST];
+        int tmp_neighbors[MAX_CLOSE];
+        double tmp_dists[MAX_CLOSE];
+        int non_nearest[MAX_NON_NEAREST];
+        int ind_non_nearest[MAX_NON_NEAREST];
+
+        // sanity checks
+        if (num_nearest_neighbors > MAX_NEAREST ||
+            num_close_neighbors > MAX_CLOSE ||
+            num_non_nearest_neighbors > MAX_NON_NEAREST) {
+            // out-of-bounds risk, just bail
+            return;
+        }
+
+        // initialize nearest
         for (int j = 0; j < num_nearest_neighbors; j++) {
             nn_square_dist[j] = CUDART_INF;
             neighbors_i[j] = -1;
@@ -254,27 +277,18 @@ namespace GPBoost {
 
         // --- nearest neighbors ---
         if (neighbor_selection == 2 && num_cand_neighbors > num_close_neighbors) {
-            // half_random_close_neighbors with close pool
-            int* tmp_neighbors = new int[num_close_neighbors];
-            double* tmp_dists = new double[num_close_neighbors];
-
             find_nearest_neighbors_fast_internal_GPU(
                 i, num_data, num_close_neighbors, end_search_at,
                 dim_coords, coords, sort_sum, sort_inv_sum, coords_sum,
                 tmp_neighbors, tmp_dists
             );
 
-            // copy nearest subset
             for (int j = 0; j < num_nearest_neighbors; j++) {
                 neighbors_i[j] = tmp_neighbors[j];
                 nn_square_dist[j] = tmp_dists[j];
             }
-
-            delete[] tmp_neighbors;
-            delete[] tmp_dists;
         }
         else {
-            // default or half_random
             find_nearest_neighbors_fast_internal_GPU(
                 i, num_data, num_nearest_neighbors, end_search_at,
                 dim_coords, coords, sort_sum, sort_inv_sum, coords_sum,
@@ -297,8 +311,7 @@ namespace GPBoost {
         if (neighbor_selection == 1 || neighbor_selection == 2) {
             if (neighbor_selection == 1 ||
                 (neighbor_selection == 2 && num_cand_neighbors <= num_close_neighbors)) {
-                // Sample excluding nearest neighbors
-                int* non_nearest = new int[num_non_nearest_neighbors];
+                // Sample excluding nearest
                 SampleIntNoReplaceExcludeSomeIndices_GPU(
                     num_cand_neighbors, num_non_nearest_neighbors,
                     &local_state, non_nearest,
@@ -307,11 +320,9 @@ namespace GPBoost {
                 for (int j = 0; j < num_non_nearest_neighbors; j++) {
                     neighbors_i[num_nearest_neighbors + j] = non_nearest[j];
                 }
-                delete[] non_nearest;
             }
             else {
                 // Sample within close pool
-                int* ind_non_nearest = new int[num_non_nearest_neighbors];
                 SampleIntNoReplace_GPU(
                     num_close_neighbors - num_nearest_neighbors,
                     num_non_nearest_neighbors,
@@ -321,7 +332,6 @@ namespace GPBoost {
                     neighbors_i[num_nearest_neighbors + j] =
                         neighbors_i[num_nearest_neighbors + ind_non_nearest[j]];
                 }
-                delete[] ind_non_nearest;
             }
 
             // distances for non-nearest
@@ -343,8 +353,6 @@ namespace GPBoost {
                 }
             }
         }
-
-        delete[] nn_square_dist;
 
         // save back RNG state
         rng_states[tid] = local_state;
