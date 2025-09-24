@@ -388,7 +388,7 @@ namespace GPBoost {
         int neighbor_selection_int
     ) {
 
-
+        printf("Test\n"); fflush(stdout);
         int total_threads = num_data - start_at;
         int num_neighbors_total = num_nearest_neighbors + num_non_nearest_neighbors;
 
@@ -400,7 +400,7 @@ namespace GPBoost {
         int* d_neighbors = nullptr;
         double* d_dist_obs_neighbors = nullptr;
         int* d_has_duplicates = nullptr;
-
+        printf("Test1\n"); fflush(stdout);
         CUDA_CHECK(cudaMalloc(&d_coords, num_data * dim_coords * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_sort_sum, num_data * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_sort_inv_sum, num_data * sizeof(int)));
@@ -417,7 +417,7 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_sort_inv_sum, sort_inv_sum.data(), num_data * sizeof(int), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_coords_sum, coords_sum.data(), num_data * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemset(d_has_duplicates, 0, sizeof(int)));
-
+        printf("Test2\n"); fflush(stdout);
         // --- initialize RNG states ---
         curandState* d_rng_states = nullptr;
         CUDA_CHECK(cudaMalloc(&d_rng_states, total_threads * sizeof(curandState)));
@@ -427,11 +427,11 @@ namespace GPBoost {
 
         cudaError_t rngErr = cudaGetLastError();
         if (rngErr != cudaSuccess) {
-            fprintf(stderr, "RNG init kernel launch failed: %s\n", cudaGetErrorString(rngErr));
+            fprintf(stderr, "RNG init kernel launch failed: %s\n", cudaGetErrorString(rngErr)); fflush(stdout);
             return false;
         }
         CUDA_CHECK(cudaDeviceSynchronize());
-
+        printf("Test3\n"); fflush(stdout);
         // --- run neighbor kernel ---
         find_neighbors_kernel << <blocks, threads >> > (
             num_data,
@@ -453,15 +453,15 @@ namespace GPBoost {
             neighbor_selection_int,
             d_rng_states
             );
-
+        printf("Test4\n"); fflush(stdout);
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
-            fprintf(stderr, "Neighbor kernel launch failed: %s\n", cudaGetErrorString(launchErr));
+            fprintf(stderr, "Neighbor kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
         cudaError_t execErr = cudaDeviceSynchronize();
         if (execErr != cudaSuccess) {
-            fprintf(stderr, "Neighbor kernel execution failed: %s\n", cudaGetErrorString(execErr));
+            fprintf(stderr, "Neighbor kernel execution failed: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
             return false;
         }
 
@@ -474,7 +474,7 @@ namespace GPBoost {
             h_dist.resize(total_threads * num_neighbors_total);
             CUDA_CHECK(cudaMemcpy(h_dist.data(), d_dist_obs_neighbors, h_dist.size() * sizeof(double), cudaMemcpyDeviceToHost));
         }
-
+        printf("Test5\n"); fflush(stdout);
         int h_has_duplicates = 0;
         if (check_has_duplicates) {
             CUDA_CHECK(cudaMemcpy(&h_has_duplicates, d_has_duplicates, sizeof(int), cudaMemcpyDeviceToHost));
