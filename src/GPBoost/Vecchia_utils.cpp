@@ -816,10 +816,13 @@ namespace GPBoost {
 				}//end parallel for loop for finding neighbors
 			}
 		}
-
+		for (int j = 0; j < std::min(num_neighbors, 5); j++) {
+			Log::REInfo("%i %i ",j, neighbors[1000][j]);
+		}
 		end = std::chrono::steady_clock::now();//only for debugging
 		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 		Log::REInfo("Test2 = %g ", el_time);
+		std::this_thread::sleep_for(std::chrono::seconds(1));
 		// Calculate distances among neighbors
 		int first_i = (start_at == 0) ? 1 : start_at;
 #pragma omp parallel for schedule(static)
