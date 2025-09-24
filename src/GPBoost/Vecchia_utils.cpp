@@ -727,15 +727,12 @@ namespace GPBoost {
 		Log::REInfo("Test1 = %g ", el_time);
 		//Find neighbors for those points where the conditioning set (=candidate neighbors) is larger than 'num_neighbors'
 		if (num_data > num_neighbors) {
-			if (GPU_use) {
-				int neighbor_selection_int = 0;
-				if (neighbor_selection == "half_random") neighbor_selection_int = 1;
-				else if (neighbor_selection == "half_random_close_neighbors") neighbor_selection_int = 2;
+			if (GPU_use || neighbor_selection != "nearest") {
 				bool success = false;
 #ifdef USE_CUDA_GP
-				success = find_nearest_neighbors_Vecchia_fast_GPU(coords,num_data,num_nearest_neighbors,num_non_nearest_neighbors,num_close_neighbors,
+				success = find_nearest_neighbors_Vecchia_fast_GPU(coords,num_data, num_neighbors,num_close_neighbors,
 					start_at,end_search_at,dim_coords,sort_sum,sort_inv_sum,coords_sum,neighbors,dist_obs_neighbors,save_distances,has_duplicates,
-					check_has_duplicates,neighbor_selection_int);
+					check_has_duplicates);
 #endif 
 				if (!success) {
 					Log::REInfo("GPU neighbor search failed! Continuing on CPU!");

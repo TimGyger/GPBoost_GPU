@@ -26,8 +26,7 @@ namespace GPBoost {
 	bool find_nearest_neighbors_Vecchia_fast_GPU(
 		const den_mat_t& coords,
 		int num_data,
-		int num_nearest_neighbors,
-		int num_non_nearest_neighbors,
+		int num_neighbors,
 		int num_close_neighbors,
 		int start_at,
 		int end_search_at,
@@ -39,8 +38,7 @@ namespace GPBoost {
 		std::vector<den_mat_t>& dist_obs_neighbors,
 		bool save_distances,
 		bool& has_duplicates,
-		bool check_has_duplicates,
-		int neighbor_selection_int
+		bool check_has_duplicates
 	);
 
 	bool LaunchCalcCovFactorGradientVecchia_GPU(

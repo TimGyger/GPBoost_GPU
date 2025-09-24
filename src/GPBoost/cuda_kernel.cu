@@ -32,9 +32,6 @@ using LightGBM::Log;
 // Maximum number of GP parameters
 #define MAX_NUM_PAR_GP 16
 
-#define MAX_NEAREST 32
-#define MAX_CLOSE   320   // e.g. 10 * MAX_NEAREST
-#define MAX_NON_NEAREST (MAX_NEAREST/2)
 
 namespace GPBoost {
 
@@ -56,98 +53,21 @@ namespace GPBoost {
         }
     }
 
-    __device__ void SampleIntNoReplaceExcludeSomeIndices_GPU(
-        int N,
-        int k,
-        curandState* state,
-        int* indices,
-        int* exclude,
-        int exclude_len) {
-
-        int count = 0;
-        for (int r = N - k; r < N; ++r) {
-            int v = (int)(curand_uniform(state) * (r + 1)); // uniform [0,r]
-            int new_draw;
-
-            // check if v already in indices[0..count-1]
-            bool found = false;
-            for (int i = 0; i < count; i++) {
-                if (indices[i] == v) { found = true; break; }
-            }
-            if (!found) {
-                new_draw = v;
-            }
-            else {
-                new_draw = r;
-            }
-
-            // check against exclude[]
-            bool excluded = false;
-            for (int i = 0; i < exclude_len; i++) {
-                if (exclude[i] == new_draw) { excluded = true; break; }
-            }
-
-            if (!excluded) {
-                indices[count++] = new_draw;
-            }
-            else {
-                r--; // retry
-            }
-
-            if (count >= k) break; // safeguard
-        }
-    }
-
-    __device__ void SampleIntNoReplace_GPU(
-        int N,
-        int k,
-        curandState* state,
-        int* indices) {
-
-        for (int r = N - k, count = 0; r < N; ++r, ++count) {
-            int v = (int)(curand_uniform(state) * (r + 1)); // uniform [0,r]
-
-            // check if v already in indices[0..count-1]
-            bool found = false;
-            for (int i = 0; i < count; i++) {
-                if (indices[i] == v) { found = true; break; }
-            }
-
-            if (!found) {
-                indices[count] = v;
-            }
-            else {
-                indices[count] = r;
-            }
-        }
-
-        // simple insertion sort (ascending order)
-        for (int i = 1; i < k; i++) {
-            int key = indices[i];
-            int j = i - 1;
-            while (j >= 0 && indices[j] > key) {
-                indices[j + 1] = indices[j];
-                j--;
-            }
-            indices[j + 1] = key;
-        }
-    }
-
     __device__ void find_nearest_neighbors_fast_internal_GPU(
         const int i,
         const int num_data,
-        const int num_nearest_neighbors,
+        const int num_neighbors,
         const int end_search_at,
         const int dim_coords,
         const double* coords,          // [num_data * dim_coords], row-major
         const int* sort_sum,           // [num_data]
         const int* sort_inv_sum,       // [num_data]
         const double* coords_sum,      // [num_data]
-        int* neighbors_i,              // [num_nearest_neighbors], output
-        double* nn_square_dist         // [num_nearest_neighbors], output
+        int* neighbors_i,              // [num_neighbors], output
+        double* nn_square_dist         // [num_neighbors], output
     ) {
         // initialize distances with infinity
-        for (int j = 0; j < num_nearest_neighbors; ++j) {
+        for (int j = 0; j < num_neighbors; ++j) {
             nn_square_dist[j] = CUDART_INF;
         }
 
@@ -157,9 +77,6 @@ namespace GPBoost {
         int down_i = sort_inv_sum[i];
 
         double smd, sed;
-        if (i == 100) {
-            printf("up down %i %i %i %i %i\n", up_i, down_i, sort_sum[down_i], sort_sum[up_i], num_nearest_neighbors);
-        }
         while (up || down) {
             if (down_i == 0) { down = false; }
             if (up_i == (num_data - 1)) { up = false; }
@@ -169,7 +86,7 @@ namespace GPBoost {
                 int cand = sort_sum[down_i];
                 if (cand < i && cand <= end_search_at) {
                     smd = (coords_sum[cand] - coords_sum[i]) * (coords_sum[cand] - coords_sum[i]);
-                    if (smd > dim_coords * nn_square_dist[num_nearest_neighbors - 1]) {
+                    if (smd > dim_coords * nn_square_dist[num_neighbors - 1]) {
                         down = false;
                     }
                     else {
@@ -179,23 +96,20 @@ namespace GPBoost {
                             double diff = coords[cand * dim_coords + d] - coords[i * dim_coords + d];
                             sed += diff * diff;
                         }
-                        if (sed < nn_square_dist[num_nearest_neighbors - 1]) {
-                            nn_square_dist[num_nearest_neighbors - 1] = sed;
-                            neighbors_i[num_nearest_neighbors - 1] = cand;
-                            SortVectorsDecreasing_GPU(nn_square_dist, neighbors_i, num_nearest_neighbors);
+                        if (sed < nn_square_dist[num_neighbors - 1]) {
+                            nn_square_dist[num_neighbors - 1] = sed;
+                            neighbors_i[num_neighbors - 1] = cand;
+                            SortVectorsDecreasing_GPU(nn_square_dist, neighbors_i, num_neighbors);
                         }
                     }
                 }
-            }
-            if (i == 100) {
-                printf("down %i %g\n", neighbors_i[num_nearest_neighbors - 1], nn_square_dist[num_nearest_neighbors - 1]);
             }
             if (up) {
                 up_i++;
                 int cand = sort_sum[up_i];
                 if (cand < i && cand <= end_search_at) {
                     smd = (coords_sum[cand] - coords_sum[i]) * (coords_sum[cand] - coords_sum[i]);
-                    if (smd > dim_coords * nn_square_dist[num_nearest_neighbors - 1]) {
+                    if (smd > dim_coords * nn_square_dist[num_neighbors - 1]) {
                         up = false;
                     }
                     else {
@@ -205,35 +119,22 @@ namespace GPBoost {
                             double diff = coords[cand * dim_coords + d] - coords[i * dim_coords + d];
                             sed += diff * diff;
                         }
-                        if (sed < nn_square_dist[num_nearest_neighbors - 1]) {
-                            nn_square_dist[num_nearest_neighbors - 1] = sed;
-                            neighbors_i[num_nearest_neighbors - 1] = cand;
-                            SortVectorsDecreasing_GPU(nn_square_dist, neighbors_i, num_nearest_neighbors);
+                        if (sed < nn_square_dist[num_neighbors - 1]) {
+                            nn_square_dist[num_neighbors - 1] = sed;
+                            neighbors_i[num_neighbors - 1] = cand;
+                            SortVectorsDecreasing_GPU(nn_square_dist, neighbors_i, num_neighbors);
                         }
                     }
                 }
             }
-
-            if (i == 100) {
-                printf("up %i %g\n", neighbors_i[num_nearest_neighbors - 1], nn_square_dist[num_nearest_neighbors - 1]);
-            }
         }
-
-        if (i == 100) {
-            printf("end %i %i %i\n", neighbors_i[0], neighbors_i[1], neighbors_i[15]);
-        }
-    }
-
-    __global__ void init_rng_states(curandState* states, int n, unsigned long seed) {
-        int tid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (tid < n) curand_init(seed, tid, 0, &states[tid]);
     }
 
     // Kernel
     __global__ void find_neighbors_kernel(
+        int first_i,
         int num_data,
-        int num_nearest_neighbors,
-        int num_non_nearest_neighbors,
+        int num_neighbors,
         int num_close_neighbors,
         int start_at,
         int end_search_at,
@@ -242,74 +143,46 @@ namespace GPBoost {
         const int* sort_sum,          // [num_data]
         const int* sort_inv_sum,      // [num_data]
         const double* coords_sum,     // [num_data]
-        int* neighbors,               // [(num_data - start_at) * (num_nearest_neighbors + num_non_nearest_neighbors)]
+        int* neighbors,               // [(num_data - first_i) * num_neighbors]
         double* dist_obs_neighbors,   // same shape (optional)
         bool save_distances,
         bool check_has_duplicates,
-        int* has_duplicates_flag,     // global flag (0 or 1)
-        int neighbor_selection,       // 0 = nearest, 1 = half_random, 2 = half_random_close_neighbors
-        curandState* rng_states       // one RNG state per thread
+        int* has_duplicates_flag     // global flag (0 or 1)
     ) {
         int tid = blockIdx.x * blockDim.x + threadIdx.x;
-        int i = start_at + tid;
+        int i = first_i + tid;
         if (i >= num_data) return;
 
-        curandState local_state = rng_states[tid];
-
-        // candidate count
-        int num_cand_neighbors = min(i, end_search_at + 1);
-
         // output pointers for this thread
-        int* neighbors_i = &neighbors[(i - start_at) * (num_nearest_neighbors + num_non_nearest_neighbors)];
+        int* neighbors_i = &neighbors[(i - first_i) * num_neighbors];
         double* dist_i = nullptr;
         if (save_distances) {
-            dist_i = &dist_obs_neighbors[(i - start_at) * (num_nearest_neighbors + num_non_nearest_neighbors)];
+            dist_i = &dist_obs_neighbors[(i - first_i) * num_neighbors];
         }
 
-        double nn_square_dist[MAX_NEAREST];
-        int tmp_neighbors[MAX_CLOSE];
-        double tmp_dists[MAX_CLOSE];
-        int non_nearest[MAX_NON_NEAREST];
-        int ind_non_nearest[MAX_NON_NEAREST];
+        double nn_square_dist[MAX_K];
 
         // sanity checks
-        if (num_nearest_neighbors > MAX_NEAREST ||
-            num_close_neighbors > MAX_CLOSE ||
-            num_non_nearest_neighbors > MAX_NON_NEAREST) {
+        if (num_neighbors > MAX_K) {
             // out-of-bounds risk, just bail
             return;
         }
 
         // initialize nearest
-        for (int j = 0; j < num_nearest_neighbors; j++) {
+        for (int j = 0; j < num_neighbors; j++) {
             nn_square_dist[j] = CUDART_INF;
             neighbors_i[j] = -1;
         }
 
-        // --- nearest neighbors ---
-        if (neighbor_selection == 2 && num_cand_neighbors > num_close_neighbors) {
-            find_nearest_neighbors_fast_internal_GPU(
-                i, num_data, num_close_neighbors, end_search_at,
-                dim_coords, coords, sort_sum, sort_inv_sum, coords_sum,
-                tmp_neighbors, tmp_dists
-            );
-
-            for (int j = 0; j < num_nearest_neighbors; j++) {
-                neighbors_i[j] = tmp_neighbors[j];
-                nn_square_dist[j] = tmp_dists[j];
-            }
-        }
-        else {
-            find_nearest_neighbors_fast_internal_GPU(
-                i, num_data, num_nearest_neighbors, end_search_at,
-                dim_coords, coords, sort_sum, sort_inv_sum, coords_sum,
-                neighbors_i, nn_square_dist
-            );
-        }
+        find_nearest_neighbors_fast_internal_GPU(
+            i, num_data, num_neighbors, end_search_at,
+            dim_coords, coords, sort_sum, sort_inv_sum, coords_sum,
+            neighbors_i, nn_square_dist
+        );
 
         // --- distances & duplicates ---
         if (save_distances || (check_has_duplicates && (*has_duplicates_flag == 0))) {
-            for (int j = 0; j < num_nearest_neighbors; j++) {
+            for (int j = 0; j < num_neighbors; j++) {
                 double dij = sqrt(nn_square_dist[j]);
                 if (save_distances) dist_i[j] = dij;
                 if (check_has_duplicates && (*has_duplicates_flag == 0) && dij < 1e-12) {
@@ -317,56 +190,6 @@ namespace GPBoost {
                 }
             }
         }
-
-        // --- non-nearest neighbors ---
-        if (neighbor_selection == 1 || neighbor_selection == 2) {
-            if (neighbor_selection == 1 ||
-                (neighbor_selection == 2 && num_cand_neighbors <= num_close_neighbors)) {
-                // Sample excluding nearest
-                SampleIntNoReplaceExcludeSomeIndices_GPU(
-                    num_cand_neighbors, num_non_nearest_neighbors,
-                    &local_state, non_nearest,
-                    neighbors_i, num_nearest_neighbors
-                );
-                for (int j = 0; j < num_non_nearest_neighbors; j++) {
-                    neighbors_i[num_nearest_neighbors + j] = non_nearest[j];
-                }
-            }
-            else {
-                // Sample within close pool
-                SampleIntNoReplace_GPU(
-                    num_close_neighbors - num_nearest_neighbors,
-                    num_non_nearest_neighbors,
-                    &local_state, ind_non_nearest
-                );
-                for (int j = 0; j < num_non_nearest_neighbors; j++) {
-                    neighbors_i[num_nearest_neighbors + j] =
-                        neighbors_i[num_nearest_neighbors + ind_non_nearest[j]];
-                }
-            }
-
-            // distances for non-nearest
-            for (int j = 0; j < num_non_nearest_neighbors; j++) {
-                int n_idx = neighbors_i[num_nearest_neighbors + j];
-                double dij = 0.0;
-                if (save_distances || (check_has_duplicates && (*has_duplicates_flag == 0))) {
-                    for (int d = 0; d < dim_coords; d++) {
-                        double diff = coords[n_idx * dim_coords + d] - coords[i * dim_coords + d];
-                        dij += diff * diff;
-                    }
-                    dij = sqrt(dij);
-                }
-                if (save_distances) {
-                    dist_i[num_nearest_neighbors + j] = dij;
-                }
-                if (check_has_duplicates && (*has_duplicates_flag == 0) && dij < 1e-12) {
-                    atomicExch(has_duplicates_flag, 1);
-                }
-            }
-        }
-
-        // save back RNG state
-        rng_states[tid] = local_state;
     }
 
 #define CUDA_CHECK(call)                                                     \
@@ -382,8 +205,7 @@ namespace GPBoost {
     bool find_nearest_neighbors_Vecchia_fast_GPU(
         const den_mat_t& coords,
         int num_data,
-        int num_nearest_neighbors,
-        int num_non_nearest_neighbors,
+        int num_neighbors,
         int num_close_neighbors,
         int start_at,
         int end_search_at,
@@ -395,14 +217,12 @@ namespace GPBoost {
         std::vector<den_mat_t>& dist_obs_neighbors,
         bool save_distances,
         bool& has_duplicates,
-        bool check_has_duplicates,
-        int neighbor_selection_int
+        bool check_has_duplicates
     ) {
 
         printf("Test\n"); fflush(stdout);
-        int total_threads = num_data - start_at;
-        int num_neighbors_total = num_nearest_neighbors + num_non_nearest_neighbors;
-
+        int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;
+        int total_threads = num_data - first_i;
         // --- allocate device memory ---
         double* d_coords = nullptr;
         int* d_sort_sum = nullptr;
@@ -418,9 +238,9 @@ namespace GPBoost {
         CUDA_CHECK(cudaMalloc(&d_sort_sum, num_data * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_sort_inv_sum, num_data * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_coords_sum, num_data * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors_total * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
         if (save_distances) {
-            CUDA_CHECK(cudaMalloc(&d_dist_obs_neighbors, total_threads * num_neighbors_total * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_dist_obs_neighbors, total_threads * num_neighbors * sizeof(double)));
         }
         CUDA_CHECK(cudaMalloc(&d_has_duplicates, sizeof(int)));
 
@@ -431,25 +251,13 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_coords_sum, coords_sum.data(), num_data * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemset(d_has_duplicates, 0, sizeof(int)));
         printf("Test2\n"); fflush(stdout);
-        // --- initialize RNG states ---
-        curandState* d_rng_states = nullptr;
-        CUDA_CHECK(cudaMalloc(&d_rng_states, total_threads * sizeof(curandState)));
         int threads = 256;
         int blocks = (total_threads + threads - 1) / threads;
-        init_rng_states << <blocks, threads >> > (d_rng_states, total_threads, 1234UL);
-
-        cudaError_t rngErr = cudaGetLastError();
-        if (rngErr != cudaSuccess) {
-            fprintf(stderr, "RNG init kernel launch failed: %s\n", cudaGetErrorString(rngErr)); fflush(stdout);
-            return false;
-        }
-        CUDA_CHECK(cudaDeviceSynchronize());
-        printf("Test3\n"); fflush(stdout);
         // --- run neighbor kernel ---
         find_neighbors_kernel << <blocks, threads >> > (
+            first_i,
             num_data,
-            num_nearest_neighbors,
-            num_non_nearest_neighbors,
+            num_neighbors,
             num_close_neighbors,
             start_at,
             end_search_at,
@@ -462,9 +270,7 @@ namespace GPBoost {
             d_dist_obs_neighbors,
             save_distances,
             check_has_duplicates,
-            d_has_duplicates,
-            neighbor_selection_int,
-            d_rng_states
+            d_has_duplicates
             );
         printf("Test4\n"); fflush(stdout);
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -480,12 +286,12 @@ namespace GPBoost {
         }
 
         // --- copy back results ---
-        std::vector<int> h_neighbors(total_threads * num_neighbors_total);
+        std::vector<int> h_neighbors(total_threads * num_neighbors);
         CUDA_CHECK(cudaMemcpy(h_neighbors.data(), d_neighbors, h_neighbors.size() * sizeof(int), cudaMemcpyDeviceToHost));
 
         std::vector<double> h_dist;
         if (save_distances) {
-            h_dist.resize(total_threads * num_neighbors_total);
+            h_dist.resize(total_threads * num_neighbors);
             CUDA_CHECK(cudaMemcpy(h_dist.data(), d_dist_obs_neighbors, h_dist.size() * sizeof(double), cudaMemcpyDeviceToHost));
         }
         printf("Test5\n"); fflush(stdout);
@@ -497,16 +303,16 @@ namespace GPBoost {
         }
 
         // --- fill into neighbors/dist_obs_neighbors ---
-        for (int i = start_at; i < num_data; i++) {
-            neighbors[i - start_at].resize(num_neighbors_total);
-            for (int j = 0; j < num_neighbors_total; j++) {
-                neighbors[i - start_at][j] = h_neighbors[(i - start_at) * num_neighbors_total + j];
+        for (int i = first_i; i < num_data; i++) {
+            neighbors[i].resize(num_neighbors);
+            for (int j = 0; j < num_neighbors; j++) {
+                neighbors[i - start_at][j] = h_neighbors[(i - first_i) * num_neighbors + j];
             }
             if (save_distances) {
-                dist_obs_neighbors[i - start_at].resize(num_neighbors_total, 1);
-                for (int j = 0; j < num_neighbors_total; j++) {
+                dist_obs_neighbors[i - start_at].resize(num_neighbors, 1);
+                for (int j = 0; j < num_neighbors; j++) {
                     dist_obs_neighbors[i - start_at](j, 0) =
-                        h_dist[(i - start_at) * num_neighbors_total + j];
+                        h_dist[(i - first_i) * num_neighbors + j];
                 }
             }
         }
