@@ -44,7 +44,7 @@ namespace GPBoost {
         double v;
         for (j = 1; j <= n - 1; j++) {
             k = j;
-            while (k > 0 && a[k] > a[k - 1]) {  // decreasing order!
+            while (k > 0 && a[k] < a[k - 1]) {  // decreasing order!
                 v = a[k];
                 l = b[k];
                 a[k] = a[k - 1];
@@ -158,7 +158,7 @@ namespace GPBoost {
 
         double smd, sed;
         if (i == 100) {
-            printf("up down %i %i %i %i\n", up_i, down_i, sort_sum[down_i], sort_sum[up_i]);
+            printf("up down %i %i %i %i %i\n", up_i, down_i, sort_sum[down_i], sort_sum[up_i], num_nearest_neighbors);
         }
         while (up || down) {
             if (down_i == 0) { down = false; }
