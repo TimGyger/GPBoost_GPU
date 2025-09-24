@@ -188,7 +188,7 @@ namespace GPBoost {
                 }
             }
             if (i == 100) {
-                printf("smd %g %g\n", smd, sed);
+                printf("smd %i %g\n", neighbors_i[num_nearest_neighbors - 1], nn_square_dist[num_nearest_neighbors - 1]);
             }
             if (up) {
                 up_i++;
@@ -213,6 +213,10 @@ namespace GPBoost {
                     }
                 }
             }
+        }
+
+        if (i == 100) {
+            printf("end %i %g\n", neighbors_i[0], neighbors_i[1], neighbors_i[15]);
         }
     }
 
