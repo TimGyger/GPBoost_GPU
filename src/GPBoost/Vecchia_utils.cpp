@@ -727,7 +727,7 @@ namespace GPBoost {
 		Log::REInfo("Test1 = %g ", el_time);
 		//Find neighbors for those points where the conditioning set (=candidate neighbors) is larger than 'num_neighbors'
 		if (num_data > num_neighbors) {
-			if (GPU_use || neighbor_selection != "nearest") {
+			if (GPU_use && neighbor_selection == "nearest") {
 				bool success = false;
 #ifdef USE_CUDA_GP
 				success = find_nearest_neighbors_Vecchia_fast_GPU(coords,num_data, num_neighbors,num_close_neighbors,
@@ -814,7 +814,13 @@ namespace GPBoost {
 			}
 		}
 		for (int j = 0; j < std::min(num_neighbors, 5); j++) {
-			Log::REInfo("%i %i ",j, neighbors[1000][j]);
+			Log::REInfo("a %i %i ", j, neighbors[999][j]);
+		}
+		for (int j = 0; j < std::min(num_neighbors, 5); j++) {
+			Log::REInfo("b %i %i ",j, neighbors[1000][j]);
+		}
+		for (int j = 0; j < std::min(num_neighbors, 5); j++) {
+			Log::REInfo("c %i %i ", j, neighbors[1001][j]);
 		}
 		end = std::chrono::steady_clock::now();//only for debugging
 		el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging

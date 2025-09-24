@@ -66,10 +66,6 @@ namespace GPBoost {
         int* neighbors_i,              // [num_neighbors], output
         double* nn_square_dist         // [num_neighbors], output
     ) {
-        // initialize distances with infinity
-        for (int j = 0; j < num_neighbors; ++j) {
-            nn_square_dist[j] = CUDART_INF;
-        }
 
         bool down = true;
         bool up = true;
@@ -231,7 +227,7 @@ namespace GPBoost {
         int* d_neighbors = nullptr;
         double* d_dist_obs_neighbors = nullptr;
         int* d_has_duplicates = nullptr;
-        printf("Test1\n"); fflush(stdout);
+        printf("Test1 %i\n", first_i); fflush(stdout);
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
         CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
@@ -304,7 +300,6 @@ namespace GPBoost {
 
         // --- fill into neighbors/dist_obs_neighbors ---
         for (int i = first_i; i < num_data; i++) {
-            neighbors[i].resize(num_neighbors);
             for (int j = 0; j < num_neighbors; j++) {
                 neighbors[i - start_at][j] = h_neighbors[(i - first_i) * num_neighbors + j];
             }
