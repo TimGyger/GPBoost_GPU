@@ -188,7 +188,7 @@ namespace GPBoost {
                 }
             }
             if (i == 100) {
-                printf("smd %i %g\n", neighbors_i[num_nearest_neighbors - 1], nn_square_dist[num_nearest_neighbors - 1]);
+                printf("down %i %g\n", neighbors_i[num_nearest_neighbors - 1], nn_square_dist[num_nearest_neighbors - 1]);
             }
             if (up) {
                 up_i++;
@@ -213,10 +213,14 @@ namespace GPBoost {
                     }
                 }
             }
+
+            if (i == 100) {
+                printf("up %i %g\n", neighbors_i[num_nearest_neighbors - 1], nn_square_dist[num_nearest_neighbors - 1]);
+            }
         }
 
         if (i == 100) {
-            printf("end %i %g\n", neighbors_i[0], neighbors_i[1], neighbors_i[15]);
+            printf("end %i %i %i\n", neighbors_i[0], neighbors_i[1], neighbors_i[15]);
         }
     }
 
@@ -408,7 +412,9 @@ namespace GPBoost {
         double* d_dist_obs_neighbors = nullptr;
         int* d_has_duplicates = nullptr;
         printf("Test1\n"); fflush(stdout);
-        CUDA_CHECK(cudaMalloc(&d_coords, num_data * dim_coords * sizeof(double)));
+
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
+        CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_sort_sum, num_data * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_sort_inv_sum, num_data * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_coords_sum, num_data * sizeof(double)));
