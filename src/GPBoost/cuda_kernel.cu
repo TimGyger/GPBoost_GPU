@@ -157,7 +157,9 @@ namespace GPBoost {
         int down_i = sort_inv_sum[i];
 
         double smd, sed;
-
+        if (i == 100) {
+            printf("up down %i %i %i %i\n", up_i, down_i, sort_sum[down_i], sort_sum[up_i]);
+        }
         while (up || down) {
             if (down_i == 0) { down = false; }
             if (up_i == (num_data - 1)) { up = false; }
@@ -185,7 +187,9 @@ namespace GPBoost {
                     }
                 }
             }
-
+            if (i == 100) {
+                printf("smd %g %g\n", smd, sed);
+            }
             if (up) {
                 up_i++;
                 int cand = sort_sum[up_i];
@@ -254,9 +258,6 @@ namespace GPBoost {
             dist_i = &dist_obs_neighbors[(i - start_at) * (num_nearest_neighbors + num_non_nearest_neighbors)];
         }
 
-        // ================================
-        // Replace dynamic allocations here
-        // ================================
         double nn_square_dist[MAX_NEAREST];
         int tmp_neighbors[MAX_CLOSE];
         double tmp_dists[MAX_CLOSE];
