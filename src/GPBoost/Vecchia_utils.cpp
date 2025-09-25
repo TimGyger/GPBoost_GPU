@@ -424,6 +424,7 @@ namespace GPBoost {
 #else
 				num_threads = 1;
 #endif
+				num_threads = num_data / 1000;
 				std::vector<int> levels_threads(num_threads);
 				std::vector<int> segment_start(num_threads);
 				std::vector<int> segment_length(num_threads);

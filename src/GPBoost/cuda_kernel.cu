@@ -33,6 +33,66 @@ using LightGBM::Log;
 
 namespace GPBoost {
 
+    // Device function: compute pp_node, dist_ij, and distances
+    // Each thread computes the full distances[] vector for one coord_ind_i
+    __device__ void distances_funct_device(
+        int coord_ind_i,            // index i
+        const int* coords_ind_j,    // indices j, length num_j
+        int num_ip,                      // number of inducing points
+        int num_data,                      // number of data points
+        int num_j,                      // number of j's
+        const double* coords,       // [num_data * dim_coords], row-major
+        int dim_coords,             // coordinate dimension
+        const double* corr_diag,    // [num_data]
+        const double* chol_ip_cross_cov, // [num_ip * num_data] 
+        int dist_funct,             // which distance is used
+        double* pp_node,            // [num_j], output
+        double* dist_ij,            // [num_j], output if distances_saved
+        double* distances,          // [num_j], output
+        const double* __restrict__ pars,
+        const double shape,
+        bool ard,
+        double EPSILON_NUMBERS
+    ) {
+        // Grab reference column for coord_ind_i
+        // (assuming chol_ip_cross_cov is column-major: dim_coords x num_data)
+        // If row-major, swap indexing below
+        if (dist_funct == 1) {
+            for (int j = 0; j < num_j; j++) {
+                int idx_j = coords_ind_j[j];
+
+                // Step 1: dot product
+                double dot = 0.0;
+                for (int d = 0; d < num_ip; d++) {
+                    double a = chol_ip_cross_cov[idx_j * num_ip + d];       // col idx_j
+                    double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
+                    dot += a * b;
+                }
+                pp_node[j] = dot;
+
+                // Step 2: Euclidean distance if needed
+                double sum = 0.0;
+                for (int d = 0; d < dim_coords; d++) {
+                    double diff = coords[idx_j * dim_coords + d] -
+                        coords[coord_ind_i * dim_coords + d];
+                    sum += diff * diff;
+                }
+                sum = sqrt(sum);
+                if (distances_saved) {
+                    dist_ij[j] = sum;
+                }
+                double cov = Matern_GPU(pars, sum, shape, ard, EPSILON_NUMBERS);
+                // Step 3: compute final residual distance
+                double diag_i = corr_diag[coord_ind_i];
+                double diag_j = corr_diag[idx_j];
+                double val = (cov - pp_node[j]) / sqrt(diag_i * diag_j);
+                distances[j] = sqrt(1.0 - fabs(val));
+            }
+        }
+    }
+
+   
+
 
     __device__ void SortVectorsDecreasing_GPU(double* a, int* b, int n) {
         int j, k, l;
