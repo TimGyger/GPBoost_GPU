@@ -412,6 +412,9 @@ namespace GPBoost {
 				}
 			}
 			if (brute_force_threshold < num_data) {
+				std::chrono::steady_clock::time_point begin, end;//only for debugging
+				double el_time;//only for debugging
+				begin = std::chrono::steady_clock::now();//only for debugging
 				int level = 0;
 				// Build CoverTree
 				std::map<int, std::vector<int>> cover_tree;
@@ -469,6 +472,9 @@ namespace GPBoost {
 					CoverTree_kNN(coords_ct, chol_ip_cross_cov, corr_diag, 0, re_comps_vecchia_cluster_i, cover_trees[0],
 						level, save_distances, dist_function);
 				}
+				end = std::chrono::steady_clock::now();//only for debugging
+				el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+				Log::REInfo("Testa = %g ", el_time);
 #pragma omp parallel for schedule(dynamic)
 				for (int i = brute_force_threshold; i < num_data; ++i) {
 					if (num_threads != 1) {
@@ -552,6 +558,9 @@ namespace GPBoost {
 						}//end check_has_duplicates
 					}
 				}
+				end = std::chrono::steady_clock::now();//only for debugging
+				el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+				Log::REInfo("Testb = %g ", el_time);
 			}
 		}
 		// Calculate distances among neighbors

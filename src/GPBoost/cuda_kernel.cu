@@ -33,6 +33,36 @@ using LightGBM::Log;
 
 namespace GPBoost {
 
+    __device__ double Matern_GPU(const double* __restrict__ pars,
+        double d,
+        const double shape,
+        bool ard,
+        double EPSILON_NUMBERS) {
+        // Safety for zero distance
+        double var = pars[0];
+        double range;
+        if (ard) {
+            range = 1.;
+        }
+        else {
+            range = pars[1];
+        }
+        if (d < EPSILON_NUMBERS) return var;
+        double range_dist = range * d;
+        if (shape == 0.5) {
+            return var * exp(-range_dist);
+        }
+        else if (shape == 1.5) {
+            return var * (1. + range_dist) * exp(-range_dist);
+        }
+        else if (shape == 2.5) {
+            return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
+        }
+        else {
+            return 0.0;
+        }
+    }
+
     // Device function: compute pp_node, dist_ij, and distances
     // Each thread computes the full distances[] vector for one coord_ind_i
     __device__ void distances_funct_device(
@@ -49,6 +79,7 @@ namespace GPBoost {
         double* pp_node,            // [num_j], output
         double* dist_ij,            // [num_j], output if distances_saved
         double* distances,          // [num_j], output
+        bool distances_saved,
         const double* __restrict__ pars,
         const double shape,
         bool ard,
@@ -381,36 +412,6 @@ namespace GPBoost {
             s += t * t; 
         }
         return s;
-    }
-
-    __device__ double Matern_GPU(const double* __restrict__ pars, 
-        double d, 
-        const double shape, 
-        bool ard,
-        double EPSILON_NUMBERS) {
-        // Safety for zero distance
-        double var = pars[0];
-        double range;
-        if (ard) {
-            range = 1.;
-        }
-        else {
-            range = pars[1];
-        }
-        if (d < EPSILON_NUMBERS) return var;
-        double range_dist = range * d;
-        if (shape == 0.5) {
-            return var *  exp(-range_dist);
-        }
-        else if (shape == 1.5) {
-            return var * (1. + range_dist) * exp(-range_dist);
-        }
-        else if (shape == 2.5) {
-            return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
-        }
-        else {
-            return 0.0;
-        }
     }
 
     __device__ double GradientRangeMatern_GPU(const double* __restrict__ a, 
