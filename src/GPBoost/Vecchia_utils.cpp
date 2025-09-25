@@ -477,9 +477,14 @@ namespace GPBoost {
 				end = std::chrono::steady_clock::now();//only for debugging
 				el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
 				Log::REInfo("Testa = %g ", el_time);
+				std::chrono::steady_clock::time_point begin1, end1;//only for debugging
+				double el_time1;//only for debugging
 #pragma omp parallel for schedule(dynamic)
 				for (int i = brute_force_threshold; i < num_data; ++i) {
 					if (num_threads != 1) {
+						if (i == 90000) {
+							begin = std::chrono::steady_clock::now();//only for debugging
+						}
 						std::map<int, std::vector<int>> neighbors_per_tree;
 						std::map<int, std::vector<double>> dist_of_neighbors_per_tree;
 						for (int ii = 0; ii < num_threads; ++ii) {
@@ -488,6 +493,11 @@ namespace GPBoost {
 							}
 							neighbors_per_tree[ii] = neighbors[i - start_at];
 							dist_of_neighbors_per_tree[ii] = dist_dummy;
+						}
+						if (i == 90000) {
+							end1 = std::chrono::steady_clock::now();//only for debugging
+							el_time1 = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin1).count()) / 1000000.;//only for debugging
+							Log::REInfo("Testaa = %g ", el_time1);
 						}
 						for (int ii = 0; ii < (int)neighbors_per_tree.size(); ++ii) {
 							if ((segment_start[ii] + num_neighbors) < i) {
@@ -514,6 +524,11 @@ namespace GPBoost {
 								}
 							}
 						}
+						if (i == 90000) {
+							end1 = std::chrono::steady_clock::now();//only for debugging
+							el_time1 = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin1).count()) / 1000000.;//only for debugging
+							Log::REInfo("Testbb = %g ", el_time1);
+						}
 						if ((int)neighbors_per_tree.size() == 1) {
 							neighbors[i - start_at] = neighbors_per_tree[0];
 						}
@@ -534,6 +549,11 @@ namespace GPBoost {
 									set_tuples.insert({ dist_of_neighbors_per_tree[index_of_vector][index_in_vector + 1], index_of_vector, index_in_vector + 1, neighbors_per_tree[index_of_vector][index_in_vector + 1] });
 								}
 							}
+						}
+						if (i == 90000) {
+							end1 = std::chrono::steady_clock::now();//only for debugging
+							el_time1 = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin1).count()) / 1000000.;//only for debugging
+							Log::REInfo("Testcc = %g ", el_time1);
 						}
 					}
 					else {
