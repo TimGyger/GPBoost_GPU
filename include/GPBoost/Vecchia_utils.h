@@ -173,7 +173,8 @@ namespace GPBoost {
 		bool save_distances,
 		bool prediction,
 		bool cond_on_all,
-		const int& num_data_obs);
+		const int& num_data_obs,
+		int num_cov_trees);
 
 	/*!
 	* \brief Finds the nearest_neighbors among the previous observations
@@ -328,7 +329,8 @@ namespace GPBoost {
 		std::vector<den_mat_t>& dist_obs_neighbors_cluster_i,
 		std::vector<den_mat_t>& dist_between_neighbors_cluster_i,
 		bool save_distances_isotropic_cov_fct,
-		bool GPU_use);
+		bool GPU_use,
+		int num_cov_trees);
 
 	/*!
 	* \brief Calculate matrices A and D_inv and their derivatives for the Vecchia approximation for one cluster (independent realization of GP)

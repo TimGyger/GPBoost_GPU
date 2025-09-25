@@ -123,6 +123,7 @@ namespace GPBoost {
 				Log::REInfo("Use GPU");
 				seed = 1;
 			}
+			num_cov_trees_ = (int)cov_fct_taper_shape;
 			//Initialize RNG
 			CHECK(seed >= 0);
 			rng_ = RNG_t(seed);
@@ -3067,7 +3068,7 @@ namespace GPBoost {
 								UpdateNearestNeighbors(re_comps_vecchia_cluster_i, nearest_neighbors_cluster_i,
 									entries_init_B_cluster_i, num_neighbors_, vecchia_neighbor_selection_, rng_, ind_intercept_gp_,
 									has_duplicates_coords_, false, gauss_likelihood_, gp_approx_, chol_ip_cross_cov_[cluster_i][0],
-									dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, save_distances_isotropic_cov_fct_Vecchia_,GPU_use_);
+									dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, save_distances_isotropic_cov_fct_Vecchia_,GPU_use_,num_cov_trees_);
 							}
 							// Calculate a Cholesky factor
 							sp_mat_t B_cluster_i;
@@ -3193,7 +3194,7 @@ namespace GPBoost {
 								UpdateNearestNeighbors(re_comps_vecchia_cluster_i, nearest_neighbors_cluster_i,
 									entries_init_B_cluster_i, num_neighbors_, vecchia_neighbor_selection_, rng_, ind_intercept_gp_,
 									has_duplicates_coords_, false, gauss_likelihood_, gp_approx_, chol_ip_cross_cov_[cluster_i][0],
-									dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, save_distances_isotropic_cov_fct_Vecchia_, GPU_use_);
+									dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, save_distances_isotropic_cov_fct_Vecchia_, GPU_use_, num_cov_trees_);
 							}
 							// Calculate a Cholesky factor
 							sp_mat_t B_cluster_i;
@@ -4492,7 +4493,7 @@ namespace GPBoost {
 							entries_init_B_[cluster_i][igp], num_neighbors_, vecchia_neighbor_selection_, rng_, ind_intercept_gp_,
 							has_duplicates_coords_, true, gauss_likelihood_,
 							gp_approx_, chol_ip_cross_cov_[cluster_i][0],
-							dist_obs_neighbors_[cluster_i][0], dist_between_neighbors_[cluster_i][0], save_distances_isotropic_cov_fct_Vecchia_, GPU_use_);
+							dist_obs_neighbors_[cluster_i][0], dist_between_neighbors_[cluster_i][0], save_distances_isotropic_cov_fct_Vecchia_, GPU_use_,num_cov_trees_);
 						if (!gauss_likelihood_) {
 							likelihood_[cluster_i]->SetCholFactPatternAnalyzedFalse();
 						}
@@ -4950,6 +4951,7 @@ namespace GPBoost {
 		int num_ll_evaluations_ = 0;
 		/*! \brief Number of iterations during optimization */
 		int num_iter_ = 0;
+		int num_cov_trees_;
 		/*! \brief True, if 'OptimLinRegrCoefCovPar' has been called */
 		bool model_has_been_estimated_ = false;
 		/*! \brief Maximal relative change for covariance parameters in one iteration */

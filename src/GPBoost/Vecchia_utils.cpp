@@ -299,7 +299,8 @@ namespace GPBoost {
 		bool save_distances,
 		bool prediction,
 		bool cond_on_all,
-		const int& num_data_obs) {
+		const int& num_data_obs,
+		int num_cov_trees) {
 		string_t dist_function = "residual_correlation_FSA";
 		CHECK((int)neighbors.size() == (num_data - start_at));
 		if (save_distances) {
@@ -427,7 +428,8 @@ namespace GPBoost {
 #else
 				num_threads = 1;
 #endif
-				num_threads = num_data / 1000;
+				num_threads = num_cov_trees;
+				Log::REInfo("num_threads = %i ", num_threads);
 				std::vector<int> levels_threads(num_threads);
 				std::vector<int> segment_start(num_threads);
 				std::vector<int> segment_length(num_threads);
@@ -1107,7 +1109,8 @@ namespace GPBoost {
 		std::vector<den_mat_t>& dist_obs_neighbors_cluster_i,
 		std::vector<den_mat_t>& dist_between_neighbors_cluster_i,
 		bool save_distances_isotropic_cov_fct,
-		bool GPU_use) {
+		bool GPU_use,
+		int num_cov_trees) {
 		std::shared_ptr<RECompGP<den_mat_t>> re_comp = re_comps_vecchia_cluster_i[ind_intercept_gp];
 		CHECK(re_comp->HasIsotropicCovFct() == false || vecchia_neighbor_selection == "residual_correlation");
 		int num_re = re_comp->GetNumUniqueREs();
@@ -1118,7 +1121,7 @@ namespace GPBoost {
 		if (gp_approx == "full_scale_vecchia" && vecchia_neighbor_selection == "residual_correlation") {
 			find_nearest_neighbors_Vecchia_FSA_fast(re_comp->GetCoords(), num_re, num_neighbors, chol_ip_cross_cov,
 				re_comps_vecchia_cluster_i, nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, 0, -1, has_duplicates, save_distances_isotropic_cov_fct,
-				false, false, num_re);
+				false, false, num_re, num_cov_trees);
 		}
 		else {
 			// Calculate scaled coordinates
@@ -1800,7 +1803,7 @@ namespace GPBoost {
 			if (gp_approx == "full_scale_vecchia" && vecchia_neighbor_selection == "residual_correlation") {
 				find_nearest_neighbors_Vecchia_FSA_fast(coords_all, num_re_cli + num_re_pred_cli, num_neighbors_pred, chol_ip_cross_cov_obs_pred,
 					re_comps_vecchia, nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, num_re_cli,
-					num_re_cli - 1, check_has_duplicates, distances_saved, true, false, (int)num_re_cli);
+					num_re_cli - 1, check_has_duplicates, distances_saved, true, false, (int)num_re_cli,10);
 			}
 			else {
 				if (!scale_coordinates) {
@@ -1822,7 +1825,7 @@ namespace GPBoost {
 			if (gp_approx == "full_scale_vecchia" && vecchia_neighbor_selection == "residual_correlation") {
 				find_nearest_neighbors_Vecchia_FSA_fast(coords_all, num_re_cli + num_re_pred_cli, num_neighbors_pred, chol_ip_cross_cov_obs_pred,
 					re_comps_vecchia, nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, num_re_cli,
-					-1, check_has_duplicates, distances_saved, true, true, (int)num_re_cli);
+					-1, check_has_duplicates, distances_saved, true, true, (int)num_re_cli,10);
 			}
 			else {
 				if (!scale_coordinates) {
