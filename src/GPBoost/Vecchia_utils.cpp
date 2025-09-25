@@ -483,7 +483,7 @@ namespace GPBoost {
 				for (int i = brute_force_threshold; i < num_data; ++i) {
 					if (num_threads != 1) {
 						if (i == 90000) {
-							begin = std::chrono::steady_clock::now();//only for debugging
+							begin1 = std::chrono::steady_clock::now();//only for debugging
 						}
 						std::map<int, std::vector<int>> neighbors_per_tree;
 						std::map<int, std::vector<double>> dist_of_neighbors_per_tree;
