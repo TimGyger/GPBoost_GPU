@@ -133,16 +133,16 @@ namespace GPBoost {
         int dist_funct,
         int* knn_idx    // [n * k], output
     ) {
+        if (i == 1 || i == 10) {
+            printf("Test1");
+        }
         if (k > MAX_K) return;
         extern __shared__ double shmem[]; // dynamic shared memory
         double* dist_buf = shmem;         // [blockDim.x * k]
         int* idx_buf = (int*)&dist_buf[blockDim.x * k];
 
-        int i = blockIdx.x;   // query point index
         int tid = threadIdx.x;
-        if (i == 100) {
-            printf("Test1");
-        }
+        
 
         // local top-k buffers
         double local_dist[MAX_K];
@@ -151,7 +151,7 @@ namespace GPBoost {
             local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
-        if (i == 100) {
+        if (i == 1 || i == 10) {
             printf("Test2");
         }
 
@@ -171,7 +171,7 @@ namespace GPBoost {
                 local_idx[worst] = j;
             }
         }
-        if (i == 100) {
+        if (i == 1 || i == 10) {
             printf("Test3");
         }
 
@@ -181,7 +181,7 @@ namespace GPBoost {
             idx_buf[tid * k + kk] = local_idx[kk];
         }
         __syncthreads();
-        if (i == 100) {
+        if (i == 1 || i == 10) {
             printf("Test4");
         }
 
@@ -229,7 +229,7 @@ namespace GPBoost {
                 knn_idx[i * k + kk] = final_idx[kk];
             }
         }
-        if (i == 100) {
+        if (i == 1 || i == 10) {
             printf("Test5");
         }
 
