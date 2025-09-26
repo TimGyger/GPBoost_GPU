@@ -131,8 +131,7 @@ namespace GPBoost {
         bool ard,
         double EPSILON_NUMBERS,
         int dist_funct,
-        int* knn_idx,    // [n * k], output
-        double* knn_dist // [n * k], output
+        int* knn_idx    // [n * k], output
     ) {
         if (k > MAX_K) return;
         extern __shared__ double shmem[]; // dynamic shared memory
@@ -215,8 +214,7 @@ namespace GPBoost {
 
             // write out
             for (int kk = 0; kk < k; kk++) {
-                knn_idx[i * k + kk] = final_idx[kk];
-                knn_dist[i * k + kk] = final_dist[kk];
+                knn_idx[i * k + kk] = final_idx[kk]
             }
         }
     }
@@ -234,12 +232,10 @@ namespace GPBoost {
         bool ard,
         double EPSILON_NUMBERS,
         int dist_funct,
-        std::vector<std::vector<int>>& neighbors,
-        std::vector<den_mat_t>& dist_obs_neighbors,
-        bool save_distances
+        std::vector<std::vector<int>>& neighbors
     ) {
         // --- prepare sizes ---
-        int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;
+        int first_i = (start_at <= num_neighbors) ? 0 : start_at;
         int total_threads = num_data - first_i;
 
         // --- allocate device memory ---
@@ -248,7 +244,6 @@ namespace GPBoost {
         double* d_chol_ip_cross_cov = nullptr;
         double* d_pars = nullptr;    
         int* d_neighbors = nullptr;
-        double* d_distances = nullptr;
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
 
@@ -256,7 +251,6 @@ namespace GPBoost {
         CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&d_distances, total_threads * num_neighbors * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
         
         // --- copy data to device ---
@@ -280,8 +274,7 @@ namespace GPBoost {
             ard,
             EPSILON_NUMBERS,
             dist_funct,
-            d_neighbors,
-            d_distances
+            d_neighbors
             );
 
         cudaError_t launchErr = cudaGetLastError();
@@ -297,23 +290,15 @@ namespace GPBoost {
 
         // --- copy back results ---
         std::vector<int> h_neighbors(total_threads * num_neighbors);
-        std::vector<double> h_distances(total_threads * num_neighbors);
 
         CUDA_CHECK(cudaMemcpy(h_neighbors.data(), d_neighbors, h_neighbors.size() * sizeof(int), cudaMemcpyDeviceToHost));
-        CUDA_CHECK(cudaMemcpy(h_distances.data(), d_distances, h_distances.size() * sizeof(double), cudaMemcpyDeviceToHost));
 
         // --- fill results ---
         for (int i = first_i; i < num_data; i++) {
-            neighbors[i - start_at].resize(num_neighbors);
-            for (int j = 0; j < num_neighbors; j++) {
+            int max_neighbors = std::min(i, num_neighbors);
+            neighbors[i - start_at].resize(max_neighbors);
+            for (int j = 0; j < max_neighbors; j++) {
                 neighbors[i - start_at][j] = h_neighbors[(i - first_i) * num_neighbors + j];
-            }
-            if (save_distances) {
-                dist_obs_neighbors[i - start_at].resize(num_neighbors, 1);
-                for (int j = 0; j < num_neighbors; j++) {
-                    dist_obs_neighbors[i - start_at](j, 0) =
-                        h_distances[(i - first_i) * num_neighbors + j];
-                }
             }
         }
 
@@ -323,7 +308,6 @@ namespace GPBoost {
         cudaFree(d_chol_ip_cross_cov);
         cudaFree(d_pars);
         cudaFree(d_neighbors);
-        cudaFree(d_distances);
 
         return true;
     }

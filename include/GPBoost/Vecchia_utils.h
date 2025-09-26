@@ -26,19 +26,17 @@ namespace GPBoost {
 	bool find_nearest_neighbors_bruteforce_GPU(
 		const den_mat_t& coords,
 		int num_data,
-		int num_neighbors,       // k
+		int num_neighbors,
 		int start_at,
 		int dim_coords,
 		const vec_t& corr_diag,
 		const den_mat_t& chol_ip_cross_cov,
-		const vec_t&
+		const vec_t& pars,
 		double shape,
 		bool ard,
 		double EPSILON_NUMBERS,
 		int dist_funct,
-		std::vector<std::vector<int>>& neighbors,
-		std::vector<den_mat_t>& dist_obs_neighbors,
-		bool save_distances
+		std::vector<std::vector<int>>& neighbors
 	);
 
 	bool find_nearest_neighbors_Vecchia_fast_GPU(
