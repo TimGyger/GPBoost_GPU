@@ -174,7 +174,8 @@ namespace GPBoost {
 		bool prediction,
 		bool cond_on_all,
 		const int& num_data_obs,
-		int num_cov_trees);
+		int num_cov_trees,
+		bool GPU_use);
 
 	/*!
 	* \brief Finds the nearest_neighbors among the previous observations

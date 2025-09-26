@@ -300,7 +300,8 @@ namespace GPBoost {
 		bool prediction,
 		bool cond_on_all,
 		const int& num_data_obs,
-		int num_cov_trees) {
+		int num_cov_trees,
+		bool GPU_use) {
 		string_t dist_function = "residual_correlation_FSA";
 		CHECK((int)neighbors.size() == (num_data - start_at));
 		if (save_distances) {
@@ -365,210 +366,59 @@ namespace GPBoost {
 		}
 		//Find neighbors for those points where the conditioning set (=candidate neighbors) is larger than 'num_neighbors'
 		if (num_data > num_neighbors) {
-			int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;//The first point (first_i) for which the search is done is the point with index (num_neighbors + 1) or start_at
-			// Brute force kNN search until certain number of data points
-			int brute_force_threshold = std::min(num_data, std::max(1000, num_neighbors));
-			if (prediction) {
-				brute_force_threshold = std::min(num_data, std::max(first_i + 500, num_neighbors));
+			if (GPU_use) {
+				bool success = false;
+#ifdef USE_CUDA_GP
+				success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors,
+					start_at, dim_coords, corr_diag, chol_ip_cross_cov, pars,
+					shape, ard, EPSILON_NUMBERS, dist_funct,
+					neighbors, dist_obs_neighbors, save_distances);
+#endif 
+				if (!success) {
+					Log::REInfo("GPU neighbor search failed! Restart on CPU!");
+					find_nearest_neighbors_Vecchia_FSA_fast(coords,num_data,num_neighbors,chol_ip_cross_cov,re_comps_vecchia_cluster_i,
+						neighbors,dist_obs_neighbors,dist_between_neighbors,start_at,end_search_at,check_has_duplicates,save_distances,
+						prediction,cond_on_all,num_data_obs,num_cov_trees,false);
+					return;
+				}
 			}
-			int max_ind_nn = num_data_obs;
-			if (cond_on_all) {
-				max_ind_nn = num_data;
-			}
+			else {
+				int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;//The first point (first_i) for which the search is done is the point with index (num_neighbors + 1) or start_at
+				// Brute force kNN search until certain number of data points
+				int brute_force_threshold = std::min(num_data, std::max(1000, num_neighbors));
+				if (prediction) {
+					brute_force_threshold = std::min(num_data, std::max(first_i + 500, num_neighbors));
+				}
+				int max_ind_nn = num_data_obs;
+				if (cond_on_all) {
+					max_ind_nn = num_data;
+				}
 #pragma omp parallel for schedule(static)
-			for (int i = first_i; i < brute_force_threshold; ++i) {
-				vec_t dist_vect(1);
-				std::vector<double> nn_corr(num_neighbors);
+				for (int i = first_i; i < brute_force_threshold; ++i) {
+					vec_t dist_vect(1);
+					std::vector<double> nn_corr(num_neighbors);
 #pragma omp parallel for schedule(static)
-				for (int j = 0; j < num_neighbors; ++j) {
-					nn_corr[j] = std::numeric_limits<double>::infinity();
-				}
-				for (int jj = 0; jj < (int)std::min(i, max_ind_nn); ++jj) {
-					std::vector<int> indj{ jj };
-					distances_funct(i, indj, coords, corr_diag, chol_ip_cross_cov,
-						re_comps_vecchia_cluster_i, dist_vect, dist_function, save_distances);
-					if (dist_vect[0] < nn_corr[num_neighbors - 1]) {
-						nn_corr[num_neighbors - 1] = dist_vect[0];
-						neighbors[i - start_at][num_neighbors - 1] = jj;
-						SortVectorsDecreasing<double>(nn_corr.data(), neighbors[i - start_at].data(), num_neighbors);
+					for (int j = 0; j < num_neighbors; ++j) {
+						nn_corr[j] = std::numeric_limits<double>::infinity();
 					}
-				}
-				//Save distances between points and neighbors
-				if (save_distances) {
-					dist_obs_neighbors[i - start_at].resize(num_neighbors, 1);
-				}
-				for (int jjj = 0; jjj < num_nearest_neighbors; ++jjj) {
-					double dij = (coords(i, Eigen::all) - coords(neighbors[i - start_at][jjj], Eigen::all)).lpNorm<2>();
-					if (save_distances) {
-						dist_obs_neighbors[i - start_at](jjj, 0) = dij;
-					}
-					if (check_has_duplicates && !has_duplicates) {
-						if (dij < EPSILON_NUMBERS) {
-#pragma omp critical
-							{
-								has_duplicates = true;
-							}
+					for (int jj = 0; jj < (int)std::min(i, max_ind_nn); ++jj) {
+						std::vector<int> indj{ jj };
+						distances_funct(i, indj, coords, corr_diag, chol_ip_cross_cov,
+							re_comps_vecchia_cluster_i, dist_vect, dist_function, save_distances);
+						if (dist_vect[0] < nn_corr[num_neighbors - 1]) {
+							nn_corr[num_neighbors - 1] = dist_vect[0];
+							neighbors[i - start_at][num_neighbors - 1] = jj;
+							SortVectorsDecreasing<double>(nn_corr.data(), neighbors[i - start_at].data(), num_neighbors);
 						}
-					}//end check_has_duplicates
-				}
-			}
-			if (brute_force_threshold < num_data) {
-				std::chrono::steady_clock::time_point begin, end;//only for debugging
-				double el_time;//only for debugging
-				begin = std::chrono::steady_clock::now();//only for debugging
-				int level = 0;
-				// Build CoverTree
-				std::map<int, std::vector<int>> cover_tree;
-				std::map<int, std::map<int, std::vector<int>>> cover_trees;
-				std::vector<double> dist_dummy;
-				// Set number of threads to the maximum available
-				int num_threads;
-#ifdef _OPENMP
-				num_threads = omp_get_max_threads();
-#else
-				num_threads = 1;
-#endif
-				num_threads = num_cov_trees;
-				Log::REInfo("num_threads = %i ", num_threads);
-				std::vector<int> levels_threads(num_threads);
-				std::vector<int> segment_start(num_threads);
-				std::vector<int> segment_length(num_threads);
-				den_mat_t coords_ct;
-				if (prediction && !cond_on_all) {
-					coords_ct = coords.topRows(num_data_obs);
-				}
-				else {
-					coords_ct = coords;
-				}
-				for (int i = 0; i < num_threads; ++i) {
-					cover_trees[i] = cover_tree;
-				}
-				if (num_threads != 1) {
-					int segment_size = (int)(std::ceil((double)coords_ct.rows() / (double)num_threads));
-					if (segment_size < std::max(1000, num_neighbors)) {
-						num_threads = (int)(std::floor((double)coords_ct.rows() / (double)std::max(1000, num_neighbors)));
-						segment_size = (int)(std::ceil((double)coords_ct.rows() / (double)num_threads));
-					}
-					int last_segment = (int)(coords_ct.rows()) - (num_threads - 1) * segment_size;
-					bool overhead = false;
-					if (last_segment != segment_size) {
-						num_threads -= 1;
-						levels_threads.resize(num_threads);
-						segment_start.resize(num_threads);
-						segment_length.resize(num_threads);
-						overhead = true;
-					}
-#pragma omp parallel for
-					for (int i = 0; i < num_threads; ++i) {
-						segment_start[i] = i * segment_size;
-						segment_length[i] = segment_size;
-						if (i == num_threads - 1 && overhead) {
-							segment_length[i] += last_segment;
-						}
-						CoverTree_kNN(coords_ct.middleRows(segment_start[i], segment_length[i]), chol_ip_cross_cov.middleCols(segment_start[i], segment_length[i]),
-							corr_diag.segment(segment_start[i], segment_length[i]), segment_start[i], re_comps_vecchia_cluster_i, cover_trees[i],
-							levels_threads[i], save_distances, dist_function);
-					}
-				}
-				else {
-					CoverTree_kNN(coords_ct, chol_ip_cross_cov, corr_diag, 0, re_comps_vecchia_cluster_i, cover_trees[0],
-						level, save_distances, dist_function);
-				}
-				end = std::chrono::steady_clock::now();//only for debugging
-				el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-				Log::REInfo("Testa = %g ", el_time);
-				std::chrono::steady_clock::time_point begin1, end1;//only for debugging
-				double el_time1;//only for debugging
-#pragma omp parallel for schedule(dynamic)
-				for (int i = brute_force_threshold; i < num_data; ++i) {
-					if (num_threads != 1) {
-						if (i == 90000) {
-							begin1 = std::chrono::steady_clock::now();//only for debugging
-						}
-						std::map<int, std::vector<int>> neighbors_per_tree;
-						std::map<int, std::vector<double>> dist_of_neighbors_per_tree;
-						for (int ii = 0; ii < num_threads; ++ii) {
-							if (segment_start[ii] >= i) {
-								break;
-							}
-							neighbors_per_tree[ii] = neighbors[i - start_at];
-							dist_of_neighbors_per_tree[ii] = dist_dummy;
-						}
-						if (i == 90000) {
-							end1 = std::chrono::steady_clock::now();//only for debugging
-							el_time1 = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin1).count()) / 1000000.;//only for debugging
-							Log::REInfo("Testaa = %g ", el_time1);
-						}
-						for (int ii = 0; ii < (int)neighbors_per_tree.size(); ++ii) {
-							if ((segment_start[ii] + num_neighbors) < i) {
-								find_kNN_CoverTree(i, num_neighbors, levels_threads[ii], save_distances, coords, chol_ip_cross_cov,
-									corr_diag, re_comps_vecchia_cluster_i, neighbors_per_tree[ii], dist_of_neighbors_per_tree[ii], cover_trees[ii], dist_function);
-							}
-							else if (segment_start[ii] < i) {
-								vec_t dist_vect(1);
-								int size_smaller_k = std::min(i - segment_start[ii], num_neighbors);
-								dist_of_neighbors_per_tree[ii].resize(size_smaller_k);
-								neighbors_per_tree[ii].resize(size_smaller_k);
-								for (int j = 0; j < size_smaller_k; ++j) {
-									dist_of_neighbors_per_tree[ii][j] = std::numeric_limits<double>::infinity();
-								}
-								for (int jj = segment_start[ii]; jj < i; ++jj) {
-									std::vector<int> indj{ jj };
-									distances_funct(i, indj, coords, corr_diag, chol_ip_cross_cov,
-										re_comps_vecchia_cluster_i, dist_vect, dist_function, save_distances);
-									if (dist_vect[0] < dist_of_neighbors_per_tree[ii][size_smaller_k - 1]) {
-										dist_of_neighbors_per_tree[ii][size_smaller_k - 1] = dist_vect[0];
-										neighbors_per_tree[ii][size_smaller_k - 1] = jj;
-										SortVectorsDecreasing<double>(dist_of_neighbors_per_tree[ii].data(), neighbors_per_tree[ii].data(), size_smaller_k);
-									}
-								}
-							}
-						}
-						if (i == 90000) {
-							end1 = std::chrono::steady_clock::now();//only for debugging
-							el_time1 = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin1).count()) / 1000000.;//only for debugging
-							Log::REInfo("Testbb = %g ", el_time1);
-						}
-						if ((int)neighbors_per_tree.size() == 1) {
-							neighbors[i - start_at] = neighbors_per_tree[0];
-						}
-						else {
-							std::set<std::tuple<double, int, int, int>> set_tuples;
-							for (int ii = 0; ii < (int)neighbors_per_tree.size(); ii++) {
-								set_tuples.insert({ dist_of_neighbors_per_tree[ii][0], ii, 0, neighbors_per_tree[ii][0] });
-							}
-							int index_of_vector;
-							int index_in_vector;
-							for (int ii = 0; ii < num_neighbors; ii++) {
-								auto it = set_tuples.begin();
-								neighbors[i - start_at][ii] = std::get<3>(*it);
-								index_of_vector = std::get<1>(*it);
-								index_in_vector = std::get<2>(*it);
-								set_tuples.erase(it);
-								if (index_in_vector < (int)dist_of_neighbors_per_tree[index_of_vector].size() - 1) {
-									set_tuples.insert({ dist_of_neighbors_per_tree[index_of_vector][index_in_vector + 1], index_of_vector, index_in_vector + 1, neighbors_per_tree[index_of_vector][index_in_vector + 1] });
-								}
-							}
-						}
-						if (i == 90000) {
-							end1 = std::chrono::steady_clock::now();//only for debugging
-							el_time1 = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin1).count()) / 1000000.;//only for debugging
-							Log::REInfo("Testcc = %g ", el_time1);
-						}
-					}
-					else {
-						find_kNN_CoverTree(i, num_neighbors, level, save_distances,
-							coords, chol_ip_cross_cov, corr_diag, re_comps_vecchia_cluster_i,
-							neighbors[i - start_at], dist_dummy, cover_trees[0], dist_function);
 					}
 					//Save distances between points and neighbors
 					if (save_distances) {
 						dist_obs_neighbors[i - start_at].resize(num_neighbors, 1);
 					}
-					for (int j = 0; j < num_nearest_neighbors; ++j) {
-						double dij = (coords(i, Eigen::all) - coords(neighbors[i - start_at][j], Eigen::all)).lpNorm<2>();
+					for (int jjj = 0; jjj < num_nearest_neighbors; ++jjj) {
+						double dij = (coords(i, Eigen::all) - coords(neighbors[i - start_at][jjj], Eigen::all)).lpNorm<2>();
 						if (save_distances) {
-							dist_obs_neighbors[i - start_at](j, 0) = dij;
+							dist_obs_neighbors[i - start_at](jjj, 0) = dij;
 						}
 						if (check_has_duplicates && !has_duplicates) {
 							if (dij < EPSILON_NUMBERS) {
@@ -580,9 +430,158 @@ namespace GPBoost {
 						}//end check_has_duplicates
 					}
 				}
-				end = std::chrono::steady_clock::now();//only for debugging
-				el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-				Log::REInfo("Testb = %g ", el_time);
+				if (brute_force_threshold < num_data) {
+					std::chrono::steady_clock::time_point begin, end;//only for debugging
+					double el_time;//only for debugging
+					begin = std::chrono::steady_clock::now();//only for debugging
+					int level = 0;
+					// Build CoverTree
+					std::map<int, std::vector<int>> cover_tree;
+					std::map<int, std::map<int, std::vector<int>>> cover_trees;
+					std::vector<double> dist_dummy;
+					// Set number of threads to the maximum available
+					int num_threads;
+#ifdef _OPENMP
+					num_threads = omp_get_max_threads();
+#else
+					num_threads = 1;
+#endif
+					num_threads = num_cov_trees;
+					Log::REInfo("num_threads = %i ", num_threads);
+					std::vector<int> levels_threads(num_threads);
+					std::vector<int> segment_start(num_threads);
+					std::vector<int> segment_length(num_threads);
+					den_mat_t coords_ct;
+					if (prediction && !cond_on_all) {
+						coords_ct = coords.topRows(num_data_obs);
+					}
+					else {
+						coords_ct = coords;
+					}
+					for (int i = 0; i < num_threads; ++i) {
+						cover_trees[i] = cover_tree;
+					}
+					if (num_threads != 1) {
+						int segment_size = (int)(std::ceil((double)coords_ct.rows() / (double)num_threads));
+						if (segment_size < std::max(1000, num_neighbors)) {
+							num_threads = (int)(std::floor((double)coords_ct.rows() / (double)std::max(1000, num_neighbors)));
+							segment_size = (int)(std::ceil((double)coords_ct.rows() / (double)num_threads));
+						}
+						int last_segment = (int)(coords_ct.rows()) - (num_threads - 1) * segment_size;
+						bool overhead = false;
+						if (last_segment != segment_size) {
+							num_threads -= 1;
+							levels_threads.resize(num_threads);
+							segment_start.resize(num_threads);
+							segment_length.resize(num_threads);
+							overhead = true;
+						}
+#pragma omp parallel for
+						for (int i = 0; i < num_threads; ++i) {
+							segment_start[i] = i * segment_size;
+							segment_length[i] = segment_size;
+							if (i == num_threads - 1 && overhead) {
+								segment_length[i] += last_segment;
+							}
+							CoverTree_kNN(coords_ct.middleRows(segment_start[i], segment_length[i]), chol_ip_cross_cov.middleCols(segment_start[i], segment_length[i]),
+								corr_diag.segment(segment_start[i], segment_length[i]), segment_start[i], re_comps_vecchia_cluster_i, cover_trees[i],
+								levels_threads[i], save_distances, dist_function);
+						}
+					}
+					else {
+						CoverTree_kNN(coords_ct, chol_ip_cross_cov, corr_diag, 0, re_comps_vecchia_cluster_i, cover_trees[0],
+							level, save_distances, dist_function);
+					}
+					end = std::chrono::steady_clock::now();//only for debugging
+					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+					Log::REInfo("Testa = %g ", el_time);
+#pragma omp parallel for schedule(dynamic)
+					for (int i = brute_force_threshold; i < num_data; ++i) {
+						if (num_threads != 1) {
+							std::map<int, std::vector<int>> neighbors_per_tree;
+							std::map<int, std::vector<double>> dist_of_neighbors_per_tree;
+							for (int ii = 0; ii < num_threads; ++ii) {
+								if (segment_start[ii] >= i) {
+									break;
+								}
+								neighbors_per_tree[ii] = neighbors[i - start_at];
+								dist_of_neighbors_per_tree[ii] = dist_dummy;
+							}
+							for (int ii = 0; ii < (int)neighbors_per_tree.size(); ++ii) {
+								if ((segment_start[ii] + num_neighbors) < i) {
+									find_kNN_CoverTree(i, num_neighbors, levels_threads[ii], save_distances, coords, chol_ip_cross_cov,
+										corr_diag, re_comps_vecchia_cluster_i, neighbors_per_tree[ii], dist_of_neighbors_per_tree[ii], cover_trees[ii], dist_function);
+								}
+								else if (segment_start[ii] < i) {
+									vec_t dist_vect(1);
+									int size_smaller_k = std::min(i - segment_start[ii], num_neighbors);
+									dist_of_neighbors_per_tree[ii].resize(size_smaller_k);
+									neighbors_per_tree[ii].resize(size_smaller_k);
+									for (int j = 0; j < size_smaller_k; ++j) {
+										dist_of_neighbors_per_tree[ii][j] = std::numeric_limits<double>::infinity();
+									}
+									for (int jj = segment_start[ii]; jj < i; ++jj) {
+										std::vector<int> indj{ jj };
+										distances_funct(i, indj, coords, corr_diag, chol_ip_cross_cov,
+											re_comps_vecchia_cluster_i, dist_vect, dist_function, save_distances);
+										if (dist_vect[0] < dist_of_neighbors_per_tree[ii][size_smaller_k - 1]) {
+											dist_of_neighbors_per_tree[ii][size_smaller_k - 1] = dist_vect[0];
+											neighbors_per_tree[ii][size_smaller_k - 1] = jj;
+											SortVectorsDecreasing<double>(dist_of_neighbors_per_tree[ii].data(), neighbors_per_tree[ii].data(), size_smaller_k);
+										}
+									}
+								}
+							}
+							if ((int)neighbors_per_tree.size() == 1) {
+								neighbors[i - start_at] = neighbors_per_tree[0];
+							}
+							else {
+								std::set<std::tuple<double, int, int, int>> set_tuples;
+								for (int ii = 0; ii < (int)neighbors_per_tree.size(); ii++) {
+									set_tuples.insert({ dist_of_neighbors_per_tree[ii][0], ii, 0, neighbors_per_tree[ii][0] });
+								}
+								int index_of_vector;
+								int index_in_vector;
+								for (int ii = 0; ii < num_neighbors; ii++) {
+									auto it = set_tuples.begin();
+									neighbors[i - start_at][ii] = std::get<3>(*it);
+									index_of_vector = std::get<1>(*it);
+									index_in_vector = std::get<2>(*it);
+									set_tuples.erase(it);
+									if (index_in_vector < (int)dist_of_neighbors_per_tree[index_of_vector].size() - 1) {
+										set_tuples.insert({ dist_of_neighbors_per_tree[index_of_vector][index_in_vector + 1], index_of_vector, index_in_vector + 1, neighbors_per_tree[index_of_vector][index_in_vector + 1] });
+									}
+								}
+							}
+						}
+						else {
+							find_kNN_CoverTree(i, num_neighbors, level, save_distances,
+								coords, chol_ip_cross_cov, corr_diag, re_comps_vecchia_cluster_i,
+								neighbors[i - start_at], dist_dummy, cover_trees[0], dist_function);
+						}
+						//Save distances between points and neighbors
+						if (save_distances) {
+							dist_obs_neighbors[i - start_at].resize(num_neighbors, 1);
+						}
+						for (int j = 0; j < num_nearest_neighbors; ++j) {
+							double dij = (coords(i, Eigen::all) - coords(neighbors[i - start_at][j], Eigen::all)).lpNorm<2>();
+							if (save_distances) {
+								dist_obs_neighbors[i - start_at](j, 0) = dij;
+							}
+							if (check_has_duplicates && !has_duplicates) {
+								if (dij < EPSILON_NUMBERS) {
+#pragma omp critical
+									{
+										has_duplicates = true;
+									}
+								}
+							}//end check_has_duplicates
+						}
+					}
+					end = std::chrono::steady_clock::now();//only for debugging
+					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+					Log::REInfo("Testb = %g ", el_time);
+				}
 			}
 		}
 		// Calculate distances among neighbors
@@ -765,7 +764,7 @@ namespace GPBoost {
 						check_has_duplicates);
 #endif 
 					if (!success) {
-						Log::REInfo("GPU neighbor search failed! Continuing on CPU!");
+						Log::REInfo("GPU neighbor search failed! Restart on CPU!");
 						find_nearest_neighbors_Vecchia_fast(coords, num_data, num_neighbors, neighbors, dist_obs_neighbors, dist_between_neighbors,
 							start_at, end_search_at, check_has_duplicates, neighbor_selection, gen, save_distances, false);
 					}
@@ -1141,7 +1140,7 @@ namespace GPBoost {
 		if (gp_approx == "full_scale_vecchia" && vecchia_neighbor_selection == "residual_correlation") {
 			find_nearest_neighbors_Vecchia_FSA_fast(re_comp->GetCoords(), num_re, num_neighbors, chol_ip_cross_cov,
 				re_comps_vecchia_cluster_i, nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, 0, -1, has_duplicates, save_distances_isotropic_cov_fct,
-				false, false, num_re, num_cov_trees);
+				false, false, num_re, num_cov_trees, GPU_use);
 		}
 		else {
 			// Calculate scaled coordinates
@@ -1823,7 +1822,7 @@ namespace GPBoost {
 			if (gp_approx == "full_scale_vecchia" && vecchia_neighbor_selection == "residual_correlation") {
 				find_nearest_neighbors_Vecchia_FSA_fast(coords_all, num_re_cli + num_re_pred_cli, num_neighbors_pred, chol_ip_cross_cov_obs_pred,
 					re_comps_vecchia, nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, num_re_cli,
-					num_re_cli - 1, check_has_duplicates, distances_saved, true, false, (int)num_re_cli,10);
+					num_re_cli - 1, check_has_duplicates, distances_saved, true, false, (int)num_re_cli,10, GPU_use);
 			}
 			else {
 				if (!scale_coordinates) {
@@ -1845,7 +1844,7 @@ namespace GPBoost {
 			if (gp_approx == "full_scale_vecchia" && vecchia_neighbor_selection == "residual_correlation") {
 				find_nearest_neighbors_Vecchia_FSA_fast(coords_all, num_re_cli + num_re_pred_cli, num_neighbors_pred, chol_ip_cross_cov_obs_pred,
 					re_comps_vecchia, nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, num_re_cli,
-					-1, check_has_duplicates, distances_saved, true, true, (int)num_re_cli,10);
+					-1, check_has_duplicates, distances_saved, true, true, (int)num_re_cli,10, GPU_use);
 			}
 			else {
 				if (!scale_coordinates) {

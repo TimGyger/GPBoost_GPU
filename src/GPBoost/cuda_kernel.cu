@@ -25,13 +25,23 @@ using LightGBM::Log;
 #endif
 
 // Maximum neighbor size per data point
-#define MAX_K 32
+#define MAX_K 64
 
 // Maximum number of GP parameters
 #define MAX_NUM_PAR_GP 16
 
 
 namespace GPBoost {
+
+#define CUDA_CHECK(call)                                                     \
+{                                                                            \
+    cudaError_t err = call;                                                  \
+    if (err != cudaSuccess) {                                                \
+        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
+                __FILE__, __LINE__, cudaGetErrorString(err));fflush(stdout); \
+        return false;                                                        \
+    }                                                                        \
+}
 
     __device__ double Matern_GPU(const double* __restrict__ pars,
         double d,
@@ -63,23 +73,16 @@ namespace GPBoost {
         }
     }
 
-    // Device function: compute pp_node, dist_ij, and distances
-    // Each thread computes the full distances[] vector for one coord_ind_i
-    __device__ void distances_funct_device(
+    // Device function: compute distance
+    __device__ double distances_funct_device(
         int coord_ind_i,            // index i
-        const int* coords_ind_j,    // indices j, length num_j
+        int coords_ind_j,    // indices j
         int num_ip,                      // number of inducing points
-        int num_data,                      // number of data points
-        int num_j,                      // number of j's
         const double* coords,       // [num_data * dim_coords], row-major
         int dim_coords,             // coordinate dimension
         const double* corr_diag,    // [num_data]
         const double* chol_ip_cross_cov, // [num_ip * num_data] 
         int dist_funct,             // which distance is used
-        double* pp_node,            // [num_j], output
-        double* dist_ij,            // [num_j], output if distances_saved
-        double* distances,          // [num_j], output
-        bool distances_saved,
         const double* __restrict__ pars,
         const double shape,
         bool ard,
@@ -87,43 +90,244 @@ namespace GPBoost {
     ) {
         // Grab reference column for coord_ind_i
         // (assuming chol_ip_cross_cov is column-major: dim_coords x num_data)
-        // If row-major, swap indexing below
         if (dist_funct == 1) {
-            for (int j = 0; j < num_j; j++) {
-                int idx_j = coords_ind_j[j];
+            // Step 1: dot product
+            double dot = 0.0;
+            for (int d = 0; d < num_ip; d++) {
+                double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
+                double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
+                dot += a * b;
+            }
+            // Step 2: Euclidean distance if needed
+            double sum = 0.0;
+            double dist_ij;
+            for (int d = 0; d < dim_coords; d++) {
+                double diff = coords[coords_ind_j * dim_coords + d] -
+                    coords[coord_ind_i * dim_coords + d];
+                sum += diff * diff;
+            }
+            dist_ij = sqrt(sum);
+            double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
+            // Step 3: compute final residual distance
+            double diag_i = corr_diag[coord_ind_i];
+            double diag_j = corr_diag[coords_ind_j];
+            double val = (cov - dot) / sqrt(diag_i * diag_j);
+            double tmp = 1.0 - fabs(val);
+            return (tmp > 0.0) ? sqrt(tmp) : 0.0;
+        }
+        return CUDART_INF;
+    }
 
-                // Step 1: dot product
-                double dot = 0.0;
-                for (int d = 0; d < num_ip; d++) {
-                    double a = chol_ip_cross_cov[idx_j * num_ip + d];       // col idx_j
-                    double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
-                    dot += a * b;
-                }
-                pp_node[j] = dot;
+   
+    // Brute-force kNN kernel -----------------
+    __global__ void knn_bruteforce_kernel(
+        int n, int d, int k,
+        const double* coords,              // [n * d], row-major
+        const double* corr_diag,           // [n]
+        const double* chol_ip_cross_cov,   // [num_ip * n]
+        int num_ip,
+        const double* pars,
+        double shape,
+        bool ard,
+        double EPSILON_NUMBERS,
+        int dist_funct,
+        int* knn_idx,    // [n * k], output
+        double* knn_dist // [n * k], output
+    ) {
+        if (k > MAX_K) return;
+        extern __shared__ double shmem[]; // dynamic shared memory
+        double* dist_buf = shmem;         // [blockDim.x * k]
+        int* idx_buf = (int*)&dist_buf[blockDim.x * k];
 
-                // Step 2: Euclidean distance if needed
-                double sum = 0.0;
-                for (int d = 0; d < dim_coords; d++) {
-                    double diff = coords[idx_j * dim_coords + d] -
-                        coords[coord_ind_i * dim_coords + d];
-                    sum += diff * diff;
+        int i = blockIdx.x;   // query point index
+        int tid = threadIdx.x;
+
+        // local top-k buffers
+        double local_dist[MAX_K];
+        int local_idx[MAX_K];
+        for (int kk = 0; kk < k; kk++) {
+            local_dist[kk] = CUDART_INF;
+            local_idx[kk] = -1;
+        }
+
+        // each thread checks candidates j < i
+        for (int j = tid; j < i; j += blockDim.x) {
+            // call your distance function with single j
+            double dij = distances_funct_device(i,j,num_ip,coords,d,corr_diag,chol_ip_cross_cov,dist_funct,
+                pars,shape,ard,EPSILON_NUMBERS);
+
+            // insert into local top-k
+            int worst = 0;
+            for (int kk = 1; kk < k; kk++) {
+                if (local_dist[kk] > local_dist[worst]) worst = kk;
+            }
+            if (dij < local_dist[worst]) {
+                local_dist[worst] = dij;
+                local_idx[worst] = j;
+            }
+        }
+
+        // write local results to shared memory
+        for (int kk = 0; kk < k; kk++) {
+            dist_buf[tid * k + kk] = local_dist[kk];
+            idx_buf[tid * k + kk] = local_idx[kk];
+        }
+        __syncthreads();
+
+        // block reduction: keep only best k
+        if (tid == 0) {
+            double final_dist[MAX_K];
+            int final_idx[MAX_K];
+            for (int kk = 0; kk < k; kk++) {
+                final_dist[kk] = CUDART_INF;
+                final_idx[kk] = -1;
+            }
+
+            int total = blockDim.x * k;
+            for (int t = 0; t < total; t++) {
+                double dval = dist_buf[t];
+                int jval = idx_buf[t];
+                if (jval < 0) continue;
+
+                int worst = 0;
+                for (int kk = 1; kk < k; kk++) {
+                    if (final_dist[kk] > final_dist[worst]) worst = kk;
                 }
-                sum = sqrt(sum);
-                if (distances_saved) {
-                    dist_ij[j] = sum;
+                if (dval < final_dist[worst]) {
+                    final_dist[worst] = dval;
+                    final_idx[worst] = jval;
                 }
-                double cov = Matern_GPU(pars, sum, shape, ard, EPSILON_NUMBERS);
-                // Step 3: compute final residual distance
-                double diag_i = corr_diag[coord_ind_i];
-                double diag_j = corr_diag[idx_j];
-                double val = (cov - pp_node[j]) / sqrt(diag_i * diag_j);
-                distances[j] = sqrt(1.0 - fabs(val));
+            }
+
+            // insertion sort: sort results ascending (closest first)
+            for (int a = 1; a < k; a++) {
+                double key_dist = final_dist[a];
+                int key_idx = final_idx[a];
+                int b = a - 1;
+                while (b >= 0 && final_dist[b] > key_dist) {
+                    final_dist[b + 1] = final_dist[b];
+                    final_idx[b + 1] = final_idx[b];
+                    b--;
+                }
+                final_dist[b + 1] = key_dist;
+                final_idx[b + 1] = key_idx;
+            }
+
+            // write out
+            for (int kk = 0; kk < k; kk++) {
+                knn_idx[i * k + kk] = final_idx[kk];
+                knn_dist[i * k + kk] = final_dist[kk];
             }
         }
     }
 
-   
+    bool find_nearest_neighbors_bruteforce_GPU(
+        const den_mat_t& coords,
+        int num_data,
+        int num_neighbors,       // k
+        int start_at,
+        int dim_coords,
+        const vec_t& corr_diag,
+        const den_mat_t& chol_ip_cross_cov,
+        const std::vector<double>& pars,
+        double shape,
+        bool ard,
+        double EPSILON_NUMBERS,
+        int dist_funct,
+        std::vector<std::vector<int>>& neighbors,
+        std::vector<den_mat_t>& dist_obs_neighbors,
+        bool save_distances
+    ) {
+        // --- prepare sizes ---
+        int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;
+        int total_threads = num_data - first_i;
 
+        // --- allocate device memory ---
+        double* d_coords = nullptr;
+        double* d_corr_diag = nullptr;
+        double* d_chol_ip_cross_cov = nullptr;
+        double* d_pars = nullptr;
+        int* d_neighbors = nullptr;
+        double* d_distances = nullptr;
+
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
+
+        CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov.size() * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&d_distances, total_threads * num_neighbors * sizeof(double)));
+
+        // --- copy data to device ---
+        CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
+
+        // --- launch kernel ---
+        int threads = 256;
+        int blocks = total_threads;  // one block per query point i
+        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
+
+        knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
+            num_data, dim_coords, num_neighbors,
+            d_coords,
+            d_corr_diag,
+            d_chol_ip_cross_cov,
+            (int)chol_ip_cross_cov.rows(), // num_ip
+            d_pars,
+            shape,
+            ard,
+            EPSILON_NUMBERS,
+            dist_funct,
+            d_neighbors,
+            d_distances
+            );
+
+        cudaError_t launchErr = cudaGetLastError();
+        if (launchErr != cudaSuccess) {
+            fprintf(stderr, "kNN kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
+            return false;
+        }
+        cudaError_t execErr = cudaDeviceSynchronize();
+        if (execErr != cudaSuccess) {
+            fprintf(stderr, "kNN kernel execution failed: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
+            return false;
+        }
+
+        // --- copy back results ---
+        std::vector<int> h_neighbors(total_threads * num_neighbors);
+        std::vector<double> h_distances(total_threads * num_neighbors);
+
+        CUDA_CHECK(cudaMemcpy(h_neighbors.data(), d_neighbors, h_neighbors.size() * sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(h_distances.data(), d_distances, h_distances.size() * sizeof(double), cudaMemcpyDeviceToHost));
+
+        // --- fill results ---
+        for (int i = first_i; i < num_data; i++) {
+            neighbors[i - start_at].resize(num_neighbors);
+            for (int j = 0; j < num_neighbors; j++) {
+                neighbors[i - start_at][j] = h_neighbors[(i - first_i) * num_neighbors + j];
+            }
+            if (save_distances) {
+                dist_obs_neighbors[i - start_at].resize(num_neighbors, 1);
+                for (int j = 0; j < num_neighbors; j++) {
+                    dist_obs_neighbors[i - start_at](j, 0) =
+                        h_distances[(i - first_i) * num_neighbors + j];
+                }
+            }
+        }
+
+        // --- cleanup ---
+        cudaFree(d_coords);
+        cudaFree(d_corr_diag);
+        cudaFree(d_chol_ip_cross_cov);
+        cudaFree(d_pars);
+        cudaFree(d_neighbors);
+        cudaFree(d_distances);
+
+        return true;
+    }
 
     __device__ void SortVectorsDecreasing_GPU(double* a, int* b, int n) {
         int j, k, l;
@@ -276,16 +480,6 @@ namespace GPBoost {
             }
         }
     }
-
-#define CUDA_CHECK(call)                                                     \
-{                                                                            \
-    cudaError_t err = call;                                                  \
-    if (err != cudaSuccess) {                                                \
-        fprintf(stderr, "CUDA error at %s:%d: %s\n",                         \
-                __FILE__, __LINE__, cudaGetErrorString(err));fflush(stdout); \
-        return false;                                                        \
-    }                                                                        \
-}
 
     bool find_nearest_neighbors_Vecchia_fast_GPU(
         const den_mat_t& coords,

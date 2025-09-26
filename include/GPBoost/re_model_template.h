@@ -124,7 +124,6 @@ namespace GPBoost {
 				seed = 1;
 			}
 			num_cov_trees_ = (int)cov_fct_taper_shape;
-			//Initialize RNG
 			CHECK(seed >= 0);
 			rng_ = RNG_t(seed);
 			//Set up likelihood
