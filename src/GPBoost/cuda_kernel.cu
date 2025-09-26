@@ -229,7 +229,7 @@ namespace GPBoost {
         int dim_coords,
         const vec_t& corr_diag,
         const den_mat_t& chol_ip_cross_cov,
-        const double* __restrict__  pars,
+        const vec_t& pars,
         double shape,
         bool ard,
         double EPSILON_NUMBERS,
@@ -246,6 +246,7 @@ namespace GPBoost {
         double* d_coords = nullptr;
         double* d_corr_diag = nullptr;
         double* d_chol_ip_cross_cov = nullptr;
+        double* d_pars = nullptr;    
         int* d_neighbors = nullptr;
         double* d_distances = nullptr;
 
@@ -256,12 +257,13 @@ namespace GPBoost {
         CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_distances, total_threads * num_neighbors * sizeof(double)));
-
+        CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
+        
         // --- copy data to device ---
         CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
-
+        CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
         int threads = 256;
         int blocks = total_threads;  // one block per query point i
@@ -273,7 +275,7 @@ namespace GPBoost {
             d_corr_diag,
             d_chol_ip_cross_cov,
             (int)chol_ip_cross_cov.rows(), // num_ip
-            pars,
+            d_pars,
             shape,
             ard,
             EPSILON_NUMBERS,
@@ -319,6 +321,7 @@ namespace GPBoost {
         cudaFree(d_coords);
         cudaFree(d_corr_diag);
         cudaFree(d_chol_ip_cross_cov);
+        cudaFree(d_pars);
         cudaFree(d_neighbors);
         cudaFree(d_distances);
 
