@@ -424,14 +424,18 @@ namespace GPBoost {
         int tid = blockIdx.x * blockDim.x + threadIdx.x;
         int i = first_i + tid;
         if (i >= num_data) return;
-
+        if (i == 100) {
+            printf("Test1");
+        }
         // output pointers for this thread
         int* neighbors_i = &neighbors[(i - first_i) * num_neighbors];
         double* dist_i = nullptr;
         if (save_distances) {
             dist_i = &dist_obs_neighbors[(i - first_i) * num_neighbors];
         }
-
+        if (i == 100) {
+            printf("Test2");
+        }
         double nn_square_dist[MAX_K];
 
         // sanity checks
@@ -439,19 +443,25 @@ namespace GPBoost {
             // out-of-bounds risk, just bail
             return;
         }
-
+        if (i == 100) {
+            printf("Test3");
+        }
         // initialize nearest
         for (int j = 0; j < num_neighbors; j++) {
             nn_square_dist[j] = CUDART_INF;
             neighbors_i[j] = -1;
         }
-
+        if (i == 100) {
+            printf("Test4");
+        }
         find_nearest_neighbors_fast_internal_GPU(
             i, num_data, num_neighbors, end_search_at,
             dim_coords, coords, sort_sum, sort_inv_sum, coords_sum,
             neighbors_i, nn_square_dist
         );
-
+        if (i == 100) {
+            printf("Test5");
+        }
         // --- distances & duplicates ---
         if (save_distances || (check_has_duplicates && (*has_duplicates_flag == 0))) {
             for (int j = 0; j < num_neighbors; j++) {
@@ -461,6 +471,9 @@ namespace GPBoost {
                     atomicExch(has_duplicates_flag, 1);
                 }
             }
+        }
+        if (i == 100) {
+            printf("Test6");
         }
     }
 
@@ -512,6 +525,9 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemset(d_has_duplicates, 0, sizeof(int)));
         int threads = 256;
         int blocks = (total_threads + threads - 1) / threads;
+        printf("Launching kernel with %d blocks, %d threads (n=%d)\n",
+            threads, blocks, total_threads);
+        fflush(stdout);
         // --- run neighbor kernel ---
         find_neighbors_kernel << <blocks, threads >> > (
             first_i,
