@@ -96,7 +96,7 @@ namespace GPBoost {
             for (int d = 0; d < num_ip; d++) {
                 double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
                 double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
-                dot += a * b;pars,
+                dot += a * b;
             }
             // Step 2: Euclidean distance if needed
             double sum = 0.0;
