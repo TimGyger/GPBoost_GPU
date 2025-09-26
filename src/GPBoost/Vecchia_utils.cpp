@@ -376,7 +376,7 @@ namespace GPBoost {
 #ifdef USE_CUDA_GP
 				success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors,
 					start_at, (int)coords.cols(), corr_diag, chol_ip_cross_cov, pars,
-					covfct, ard, EPSILON_NUMBERS, dist_funct,
+					cov_fct_shape, ard, EPSILON_NUMBERS, dist_funct,
 					neighbors, dist_obs_neighbors, save_distances);
 #endif 
 				if (!success) {
