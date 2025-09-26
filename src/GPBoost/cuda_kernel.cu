@@ -214,7 +214,7 @@ namespace GPBoost {
 
             // write out
             for (int kk = 0; kk < k; kk++) {
-                knn_idx[i * k + kk] = final_idx[kk]
+                knn_idx[i * k + kk] = final_idx[kk];
             }
         }
     }
