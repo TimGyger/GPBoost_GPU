@@ -494,7 +494,7 @@ namespace GPBoost {
         bool& has_duplicates,
         bool check_has_duplicates
     ) {
-
+        printf("Testa\n");fflush(stdout);
         int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;
         int total_threads = num_data - first_i;
         // --- allocate device memory ---
@@ -505,7 +505,7 @@ namespace GPBoost {
         int* d_neighbors = nullptr;
         double* d_dist_obs_neighbors = nullptr;
         int* d_has_duplicates = nullptr;
-        
+        printf("Testb\n"); fflush(stdout);
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
         CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_sort_sum, num_data * sizeof(int)));
@@ -516,13 +516,14 @@ namespace GPBoost {
             CUDA_CHECK(cudaMalloc(&d_dist_obs_neighbors, total_threads * num_neighbors * sizeof(double)));
         }
         CUDA_CHECK(cudaMalloc(&d_has_duplicates, sizeof(int)));
-
+        printf("Testc\n"); fflush(stdout);
         // --- copy host data to device ---
         CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), num_data * dim_coords * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_sort_sum, sort_sum.data(), num_data * sizeof(int), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_sort_inv_sum, sort_inv_sum.data(), num_data * sizeof(int), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_coords_sum, coords_sum.data(), num_data * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemset(d_has_duplicates, 0, sizeof(int)));
+        printf("Testd\n"); fflush(stdout);
         int threads = 256;
         int blocks = (total_threads + threads - 1) / threads;
         printf("Launching kernel with %d blocks, %d threads (n=%d)\n",
