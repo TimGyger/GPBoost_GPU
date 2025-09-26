@@ -23,6 +23,24 @@ namespace GPBoost {
 
 #ifdef USE_CUDA_GP
 
+	bool find_nearest_neighbors_bruteforce_GPU(
+		const den_mat_t& coords,
+		int num_data,
+		int num_neighbors,       // k
+		int start_at,
+		int dim_coords,
+		const vec_t& corr_diag,
+		const den_mat_t& chol_ip_cross_cov,
+		const std::vector<double>& pars,
+		double shape,
+		bool ard,
+		double EPSILON_NUMBERS,
+		int dist_funct,
+		std::vector<std::vector<int>>& neighbors,
+		std::vector<den_mat_t>& dist_obs_neighbors,
+		bool save_distances
+	);
+
 	bool find_nearest_neighbors_Vecchia_fast_GPU(
 		const den_mat_t& coords,
 		int num_data,
