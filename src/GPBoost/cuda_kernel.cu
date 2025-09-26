@@ -96,7 +96,7 @@ namespace GPBoost {
             for (int d = 0; d < num_ip; d++) {
                 double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
                 double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
-                dot += a * b;
+                dot += a * b;pars,
             }
             // Step 2: Euclidean distance if needed
             double sum = 0.0;
@@ -126,7 +126,7 @@ namespace GPBoost {
         const double* corr_diag,           // [n]
         const double* chol_ip_cross_cov,   // [num_ip * n]
         int num_ip,
-        const double* pars,
+        const double* __restrict__  pars,
         double shape,
         bool ard,
         double EPSILON_NUMBERS,
@@ -224,12 +224,12 @@ namespace GPBoost {
     bool find_nearest_neighbors_bruteforce_GPU(
         const den_mat_t& coords,
         int num_data,
-        int num_neighbors,       // k
+        int num_neighbors,      
         int start_at,
         int dim_coords,
         const vec_t& corr_diag,
         const den_mat_t& chol_ip_cross_cov,
-        const std::vector<double>& pars,
+        const double* __restrict__  pars,
         double shape,
         bool ard,
         double EPSILON_NUMBERS,
@@ -246,7 +246,6 @@ namespace GPBoost {
         double* d_coords = nullptr;
         double* d_corr_diag = nullptr;
         double* d_chol_ip_cross_cov = nullptr;
-        double* d_pars = nullptr;
         int* d_neighbors = nullptr;
         double* d_distances = nullptr;
 
@@ -255,7 +254,6 @@ namespace GPBoost {
         CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov.size() * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_distances, total_threads * num_neighbors * sizeof(double)));
 
@@ -263,7 +261,6 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
 
         // --- launch kernel ---
         int threads = 256;
@@ -276,7 +273,7 @@ namespace GPBoost {
             d_corr_diag,
             d_chol_ip_cross_cov,
             (int)chol_ip_cross_cov.rows(), // num_ip
-            d_pars,
+            pars,
             shape,
             ard,
             EPSILON_NUMBERS,
@@ -322,7 +319,6 @@ namespace GPBoost {
         cudaFree(d_coords);
         cudaFree(d_corr_diag);
         cudaFree(d_chol_ip_cross_cov);
-        cudaFree(d_pars);
         cudaFree(d_neighbors);
         cudaFree(d_distances);
 
