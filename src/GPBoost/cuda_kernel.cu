@@ -131,14 +131,15 @@ namespace GPBoost {
         bool ard,
         double EPSILON_NUMBERS,
         int dist_funct,
-        int* knn_idx    // [n * k], output
+        int* knn_idx,   // [n * k], output
+        int start_at
     ) {
         
         if (k > MAX_K) return;
 
-        int i = blockIdx.x;   // one block per query point
+        int i = blockIdx.x + start_at;   // one block per query point
         if (i >= n) return;
-        if (i == 1 || i == 10) {
+        if (i == 0 || i == 10) {
             printf("Test1");
         }
         int tid = threadIdx.x;
@@ -146,7 +147,7 @@ namespace GPBoost {
         extern __shared__ double shmem[];
         double* dist_buf = shmem;          // [blockDim.x]
         int* idx_buf = (int*)&dist_buf[blockDim.x];
-        if (tid == 1 || tid == 10) {
+        if (tid == 0 || tid == 10) {
             printf("Test1");
         }
 
@@ -157,7 +158,7 @@ namespace GPBoost {
             local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
-        if (tid == 1 || tid == 10) {
+        if (tid == 0 || tid == 10) {
             printf("Test2");
         }
 
@@ -285,10 +286,9 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         printf("Testd\n"); fflush(stdout);
         // --- launch kernel ---
-        int threads = 256;
+        int threads = 128;
         int blocks = total_threads;   // one block per query point
-        size_t shmem_size = threads * (sizeof(double) + sizeof(int));
-
+        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
         printf("Teste\n"); fflush(stdout);
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
@@ -301,7 +301,8 @@ namespace GPBoost {
             ard,
             EPSILON_NUMBERS,
             dist_funct,
-            d_neighbors
+            d_neighbors,
+            start_at
             );
 
         printf("Testf\n"); fflush(stdout);
