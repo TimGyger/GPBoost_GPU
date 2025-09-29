@@ -278,8 +278,7 @@ namespace GPBoost {
             ard,
             EPSILON_NUMBERS,
             dist_funct,
-            d_neighbors,
-            start_at
+            d_neighbors
             );
         printf("kNN1\n"); fflush(stdout);
         cudaError_t launchErr = cudaGetLastError();
