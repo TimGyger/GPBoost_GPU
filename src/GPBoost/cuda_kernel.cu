@@ -330,9 +330,12 @@ namespace GPBoost {
         // --- fill results ---
         for (int i = start_at; i < num_data; i++) {
             int max_neighbors = std::min(i, num_neighbors);
-            neighbors[i - start_at].resize(max_neighbors);
+            //neighbors[i - start_at].resize(max_neighbors);
+            if (i == 10 || i == 10 || i == 100 || i == 1000) {
+                printf("Test %i\n", h_neighbors[(i - start_at) * num_neighbors + 0]); fflush(stdout);
+            }
             for (int j = 0; j < max_neighbors; j++) {
-                neighbors[i - start_at][j] = h_neighbors[(i - start_at) * num_neighbors + j];
+                neighbors[i][j] = h_neighbors[(i - start_at) * num_neighbors + j];
             }
         }
 
