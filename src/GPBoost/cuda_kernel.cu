@@ -146,7 +146,7 @@ namespace GPBoost {
 
         extern __shared__ double shmem[];
         double* dist_buf = shmem;          // [blockDim.x]
-        int* idx_buf = (int*)&dist_buf[blockDim.x];
+        int* idx_buf = (int*)&dist_buf[blockDim.x * k];
         if (i == 0 && tid == 0) {
             printf("Test1");
         }
@@ -331,7 +331,7 @@ namespace GPBoost {
         for (int i = start_at; i < num_data; i++) {
             int max_neighbors = std::min(i, num_neighbors);
             //neighbors[i - start_at].resize(max_neighbors);
-            if (i == 10 || i == 10 || i == 100 || i == 1000) {
+            if (i == 10 || i == 50 || i == 100 || i == 1000) {
                 printf("Test %i\n", h_neighbors[(i - start_at) * num_neighbors + 0]); fflush(stdout);
             }
             for (int j = 0; j < max_neighbors; j++) {
