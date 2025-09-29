@@ -637,9 +637,6 @@ namespace GPBoost {
 		if (check_has_duplicates) {
 			check_has_duplicates = has_duplicates;
 		}
-
-		Log::REInfo("Test=!");
-		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 	}//end find_nearest_neighbors_Vecchia_FSA_fast
 
 	void find_nearest_neighbors_Vecchia(den_mat_t& dist,
