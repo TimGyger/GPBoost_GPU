@@ -84,7 +84,7 @@ namespace GPBoost {
         }
     }
 
-    __device__ double warp_dot(const float* __restrict__ A,
+    __device__ double warp_dot(const double* __restrict__ A,
         int num_ip,
         int i, int j) {
         double sum = 0.0;
@@ -92,8 +92,8 @@ namespace GPBoost {
 
         // each lane accumulates part of the dot product
         for (int d = lane; d < num_ip; d += warpSize) {
-            float ai = A[i * num_ip + d];
-            float aj = A[j * num_ip + d];
+            double ai = A[i * num_ip + d];
+            double aj = A[j * num_ip + d];
             sum = fma((double)ai, (double)aj, sum);
         }
 
