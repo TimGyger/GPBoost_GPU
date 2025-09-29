@@ -133,7 +133,7 @@ namespace GPBoost {
         bool ard,
         double EPSILON_NUMBERS,
         int dist_funct,
-        int* knn_idx   // [n * k], output
+        int* knn_idx,   // [n * k], output
         int start_at
     ) {
         
