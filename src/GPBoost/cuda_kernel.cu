@@ -84,25 +84,6 @@ namespace GPBoost {
         }
     }
 
-    __device__ double warp_dot(const double* __restrict__ A,
-        int num_ip,
-        int i, int j) {
-        double sum = 0.0;
-        int lane = threadIdx.x % warpSize;
-
-        // each lane accumulates part of the dot product
-        for (int d = lane; d < num_ip; d += warpSize) {
-            double ai = A[i * num_ip + d];
-            double aj = A[j * num_ip + d];
-            sum = fma((double)ai, (double)aj, sum);
-        }
-
-        // warp reduction
-        for (int offset = 16; offset > 0; offset >>= 1)
-            sum += __shfl_down_sync(0xffffffff, sum, offset);
-
-        return sum; // valid in lane 0
-    }
 
     // Device function: compute distance
     __device__ double distances_funct_device(
@@ -123,10 +104,12 @@ namespace GPBoost {
         // (assuming chol_ip_cross_cov is column-major: dim_coords x num_data)
         if (dist_funct == 1) {
             // Step 1: dot product
-            double dot = warp_dot(chol_ip_cross_cov, num_ip, coord_ind_i, coords_ind_j);
-
-            // only lane 0 has valid result
-            if ((threadIdx.x % warpSize) != 0) return CUDART_INF;
+            double dot = 0.0;
+            for (int d = 0; d < num_ip; d++) {
+                double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
+                double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
+                dot = fma(a, b, dot);
+            }
             // Step 2: Euclidean distance
             double sum = 0.0;
             for (int d = 0; d < dim_coords; d++) {
