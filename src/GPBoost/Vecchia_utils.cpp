@@ -302,6 +302,9 @@ namespace GPBoost {
 		const int& num_data_obs,
 		int num_cov_trees,
 		bool GPU_use) {
+		std::chrono::steady_clock::time_point begin, end;//only for debugging
+		double el_time;//only for debugging
+		begin = std::chrono::steady_clock::now();//only for debugging
 		string_t dist_function = "residual_correlation_FSA";
 		CHECK((int)neighbors.size() == (num_data - start_at));
 		if (save_distances) {
@@ -374,7 +377,6 @@ namespace GPBoost {
 				int dist_funct = 1;
 				bool success = false;
 #ifdef USE_CUDA_GP
-				Log::REInfo("Test0 = %i ", start_at);
 				success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors,
 					start_at, (int)coords.cols(), corr_diag, chol_ip_cross_cov, pars,
 					cov_fct_shape, ard, EPSILON_NUMBERS, dist_funct,neighbors);
@@ -437,9 +439,6 @@ namespace GPBoost {
 					}
 				}
 				if (brute_force_threshold < num_data) {
-					std::chrono::steady_clock::time_point begin, end;//only for debugging
-					double el_time;//only for debugging
-					begin = std::chrono::steady_clock::now();//only for debugging
 					int level = 0;
 					// Build CoverTree
 					std::map<int, std::vector<int>> cover_tree;
@@ -498,9 +497,6 @@ namespace GPBoost {
 						CoverTree_kNN(coords_ct, chol_ip_cross_cov, corr_diag, 0, re_comps_vecchia_cluster_i, cover_trees[0],
 							level, save_distances, dist_function);
 					}
-					end = std::chrono::steady_clock::now();//only for debugging
-					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Testa = %g ", el_time);
 #pragma omp parallel for schedule(dynamic)
 					for (int i = brute_force_threshold; i < num_data; ++i) {
 						if (num_threads != 1) {
@@ -584,14 +580,12 @@ namespace GPBoost {
 							}//end check_has_duplicates
 						}
 					}
-					end = std::chrono::steady_clock::now();//only for debugging
-					el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
-					Log::REInfo("Testb = %g ", el_time);
 				}
 			}
+			end = std::chrono::steady_clock::now();//only for debugging
+			el_time = (double)(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.;//only for debugging
+			Log::REInfo("Testb = %g ", el_time);
 		}
-		Log::REInfo("Test! %i %i %i %i", neighbors[500][0], neighbors[500][1], neighbors[500][2], neighbors[500][3]);
-		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 		// Calculate distances among neighbors
 		int first_i = (start_at == 0) ? 1 : start_at;
 #pragma omp parallel for schedule(static)

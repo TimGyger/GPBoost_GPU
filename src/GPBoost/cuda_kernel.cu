@@ -139,46 +139,39 @@ namespace GPBoost {
         
         if (k > MAX_K) return;
 
-        int i = blockIdx.x + start_at;   // one block per query point
+        int i = blockIdx.x + start_at;  // one block per query point
         if (i >= n) return;
-       
+
         int tid = threadIdx.x;
 
+        // --- shared memory: one candidate per thread ---
         extern __shared__ double shmem[];
-        double* dist_buf = shmem;          // [blockDim.x]
-        int* idx_buf = (int*)&dist_buf[blockDim.x * k];
-        // local top-k buffers
-        double local_dist[MAX_K];
-        int local_idx[MAX_K];
-        for (int kk = 0; kk < k; kk++) {
-            local_dist[kk] = CUDART_INF;
-            local_idx[kk] = -1;
-        }
-        // each thread checks candidates j < i
-        for (int j = tid; j < i; j += blockDim.x) {
-            // call your distance function with single j
-            double dij = distances_funct_device(i,j,num_ip,coords,d,corr_diag,chol_ip_cross_cov,dist_funct,
-                pars,shape,ard,EPSILON_NUMBERS);
+        double* cand_dist = shmem;                  // [blockDim.x]
+        int* cand_idx = (int*)&cand_dist[blockDim.x]; // [blockDim.x]
 
-            // insert into local top-k
-            int worst = 0;
-            for (int kk = 1; kk < k; kk++) {
-                if (local_dist[kk] > local_dist[worst]) worst = kk;
-            }
-            if (dij < local_dist[worst]) {
-                local_dist[worst] = dij;
-                local_idx[worst] = j;
+        // --- each thread finds its own best candidate ---
+        double best_d = CUDART_INF;
+        int best_j = -1;
+
+        for (int j = tid; j < i; j += blockDim.x) {
+            double dij = distances_funct_device(
+                i, j, num_ip, coords, d, corr_diag, chol_ip_cross_cov,
+                dist_funct, pars, shape, ard, EPSILON_NUMBERS);
+
+            if (dij < best_d) {
+                best_d = dij;
+                best_j = j;
             }
         }
-        // write local results to shared memory
-        for (int kk = 0; kk < k; kk++) {
-            dist_buf[tid * k + kk] = local_dist[kk];
-            idx_buf[tid * k + kk] = local_idx[kk];
-        }
+
+        // store candidate in shared memory
+        cand_dist[tid] = best_d;
+        cand_idx[tid] = best_j;
         __syncthreads();
 
-        // block reduction: keep only best k
+        // --- block reduction: thread 0 collects top-k from all candidates ---
         if (tid == 0) {
+            // simple array for final selection
             double final_dist[MAX_K];
             int final_idx[MAX_K];
             for (int kk = 0; kk < k; kk++) {
@@ -186,10 +179,10 @@ namespace GPBoost {
                 final_idx[kk] = -1;
             }
 
-            int total = blockDim.x * k;
-            for (int t = 0; t < total; t++) {
-                double dval = dist_buf[t];
-                int jval = idx_buf[t];
+            // select k smallest among blockDim.x candidates
+            for (int t = 0; t < blockDim.x; t++) {
+                double dval = cand_dist[t];
+                int jval = cand_idx[t];
                 if (jval < 0) continue;
 
                 int worst = 0;
@@ -202,21 +195,21 @@ namespace GPBoost {
                 }
             }
 
-            // insertion sort: sort results ascending (closest first)
+            // sort ascending
             for (int a = 1; a < k; a++) {
-                double key_dist = final_dist[a];
-                int key_idx = final_idx[a];
+                double key_d = final_dist[a];
+                int key_i = final_idx[a];
                 int b = a - 1;
-                while (b >= 0 && final_dist[b] > key_dist) {
+                while (b >= 0 && final_dist[b] > key_d) {
                     final_dist[b + 1] = final_dist[b];
                     final_idx[b + 1] = final_idx[b];
                     b--;
                 }
-                final_dist[b + 1] = key_dist;
-                final_idx[b + 1] = key_idx;
+                final_dist[b + 1] = key_d;
+                final_idx[b + 1] = key_i;
             }
 
-            // write out
+            // write result
             for (int kk = 0; kk < k; kk++) {
                 knn_idx[(i - start_at) * k + kk] = final_idx[kk];
             }
@@ -264,8 +257,8 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
         int threads = 128;
-        int blocks = total_threads;   // one block per query point
-        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
+        int blocks = total_threads;
+        size_t shmem_size = threads * (sizeof(double) + sizeof(int));
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
             d_coords,
@@ -280,12 +273,13 @@ namespace GPBoost {
             d_neighbors,
             start_at
             );
-
+        printf("kNN1\n"); fflush(stdout);
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             fprintf(stderr, "kNN kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
+        printf("kNN2\n"); fflush(stdout);
         cudaError_t execErr = cudaDeviceSynchronize();
         if (execErr != cudaSuccess) {
             fprintf(stderr, "kNN kernel execution failed: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
@@ -296,7 +290,7 @@ namespace GPBoost {
         std::vector<int> h_neighbors(total_threads * num_neighbors);
 
         CUDA_CHECK(cudaMemcpy(h_neighbors.data(), d_neighbors, h_neighbors.size() * sizeof(int), cudaMemcpyDeviceToHost));
-
+        printf("kNN3\n"); fflush(stdout);
         // --- fill results ---
 #pragma omp parallel for schedule(static)
         for (int i = start_at; i < num_data; i++) {
@@ -306,13 +300,14 @@ namespace GPBoost {
                 neighbors[i][j] = h_neighbors[(i - start_at) * num_neighbors + j];
             }
         }
+        printf("kNN4\n"); fflush(stdout);
         // --- cleanup ---
         cudaFree(d_coords);
         cudaFree(d_corr_diag);
         cudaFree(d_chol_ip_cross_cov);
         cudaFree(d_pars);
         cudaFree(d_neighbors);
-
+        printf("kNN5\n"); fflush(stdout);
         return true;
     }
 
