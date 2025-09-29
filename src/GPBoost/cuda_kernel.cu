@@ -134,11 +134,12 @@ namespace GPBoost {
         double EPSILON_NUMBERS,
         int dist_funct,
         int* knn_idx   // [n * k], output
+        int start_at
     ) {
         
         if (k > MAX_K) return;
 
-        int i = blockIdx.x;   // one block per query point
+        int i = blockIdx.x + start_at;   // one block per query point
         if (i >= n) return;
        
         int tid = threadIdx.x;
@@ -217,7 +218,7 @@ namespace GPBoost {
 
             // write out
             for (int kk = 0; kk < k; kk++) {
-                knn_idx[i * k + kk] = final_idx[kk];
+                knn_idx[(i - start_at) * k + kk] = final_idx[kk];
             }
         }
     }
@@ -278,7 +279,8 @@ namespace GPBoost {
             ard,
             EPSILON_NUMBERS,
             dist_funct,
-            d_neighbors
+            d_neighbors,
+            start_at
             );
         printf("kNN1\n"); fflush(stdout);
         cudaError_t launchErr = cudaGetLastError();
@@ -301,9 +303,7 @@ namespace GPBoost {
         // --- fill results ---
 #pragma omp parallel for schedule(static)
         for (int i = start_at; i < num_data; i++) {
-            int max_neighbors = std::min(i, num_neighbors);
-            //neighbors[i - start_at].resize(max_neighbors);
-            for (int j = 0; j < max_neighbors; j++) {
+            for (int j = 0; j < num_neighbors; j++) {
                 neighbors[i][j] = h_neighbors[(i - start_at) * num_neighbors + j];
             }
         }
