@@ -144,8 +144,8 @@ namespace GPBoost {
         int tid = threadIdx.x;
 
         extern __shared__ double shmem[];
-        double* dist_buf = shmem;                 // [blockDim.x * k]
-        int* idx_buf = (int*)&dist_buf[blockDim.x * k];
+        double* dist_buf = shmem;          // [blockDim.x]
+        int* idx_buf = (int*)&dist_buf[blockDim.x];
         if (tid == 1 || tid == 10) {
             printf("Test1");
         }
@@ -286,8 +286,8 @@ namespace GPBoost {
         printf("Testd\n"); fflush(stdout);
         // --- launch kernel ---
         int threads = 256;
-        int blocks = total_threads;  // one block per query point i
-        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
+        int blocks = total_threads;   // one block per query point
+        size_t shmem_size = threads * (sizeof(double) + sizeof(int));
 
         printf("Teste\n"); fflush(stdout);
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
