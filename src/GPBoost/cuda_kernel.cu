@@ -25,7 +25,6 @@ using LightGBM::Log;
 #ifndef CUDART_INF
 #define CUDART_INF __longlong_as_double(0x7ff0000000000000ULL)
 #endif
-#define CUDART_INF_F __int_as_float(0x7f800000)
 
 // Maximum neighbor size per data point
 #define MAX_K 64
@@ -76,100 +75,105 @@ namespace GPBoost {
         }
     }
 
-    __device__ float Matern_GPU_case(float var, float range_dist, int shape) {
+    __device__ double Matern_GPU_case(double var, double range_dist, int shape) {
         switch (shape) {
-        case 5:  return var * expf(-range_dist);
-        case 15: return var * (1.f + range_dist) * expf(-range_dist);
-        case 25: return var * (1.f + range_dist + range_dist * range_dist / 3.f) * expf(-range_dist);
-        default: return 0.f;
+        case 5:  return var * exp(-range_dist);
+        case 15: return var * (1. + range_dist) * exp(-range_dist);
+        case 25: return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
+        default: return 0.0;
         }
     }
 
 
     // Device function: compute distance
-    __device__ float distances_funct_device(
-        int coord_ind_i,
-        int coords_ind_j,
-        int num_ip,
-        const float* coords,              // [num_data * dim_coords], row-major
-        int dim_coords,
-        const float* corr_diag,           // [num_data]
-        const float* chol_ip_cross_cov,   // [num_ip * num_data]
-        int dist_funct,
-        const float var,
+    __device__ double distances_funct_device(
+        int coord_ind_i,            // index i
+        int coords_ind_j,    // indices j
+        int num_ip,                      // number of inducing points
+        const double* coords,       // [num_data * dim_coords], row-major
+        int dim_coords,             // coordinate dimension
+        const double* corr_diag,    // [num_data]
+        const double* chol_ip_cross_cov, // [num_ip * num_data] 
+        int dist_funct,             // which distance is used
+        const double var,
         const int shape,
-        const float range,
-        float EPSILON_NUMBERS
+        const double range,
+        double EPSILON_NUMBERS
     ) {
+        // Grab reference column for coord_ind_i
+        // (assuming chol_ip_cross_cov is column-major: dim_coords x num_data)
         if (dist_funct == 1) {
             // Step 1: dot product
-            float dot = 0.f;
+            double dot = 0.0;
             for (int d = 0; d < num_ip; d++) {
-                float a = chol_ip_cross_cov[coords_ind_j * num_ip + d];
-                float b = chol_ip_cross_cov[coord_ind_i * num_ip + d];
-                dot = fmaf(a, b, dot);
+                double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
+                double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
+                dot = fma(a, b, dot);
             }
             // Step 2: Euclidean distance
-            float sum = 0.f;
+            double sum = 0.0;
             for (int d = 0; d < dim_coords; d++) {
-                float diff = coords[coords_ind_j * dim_coords + d] -
+                double diff = coords[coords_ind_j * dim_coords + d] -
                     coords[coord_ind_i * dim_coords + d];
-                sum = fmaf(diff, diff, sum);
+                sum = fma(diff, diff, sum);
             }
-            float range_dist = range * sqrtf(sum);
-            float cov = Matern_GPU_case(var, range_dist, shape);
-
-            float diag_i = corr_diag[coord_ind_i];
-            float diag_j = corr_diag[coords_ind_j];
-
-            float num = cov - dot;
-            float tmp = diag_i * diag_j / (num * num + 1e-12f); // avoid div0
+            double range_dist = range * sqrt(sum);
+            double cov = Matern_GPU_case(var, range_dist, shape);
+            //double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
+            // Step 3: compute final residual distance
+            double diag_i = corr_diag[coord_ind_i];
+            double diag_j = corr_diag[coords_ind_j];
+            //double val = (cov - dot) * rsqrt(diag_i * diag_j);
+            //double tmp = 1.0 - fabs(val);
+            double num = cov - dot;
+            double tmp = diag_i * diag_j / (num * num);
+            //return (tmp > 0.0) ? sqrt(tmp) : 0.0;
             return tmp;
         }
-        return CUDART_INF_F;
+        return CUDART_INF;
     }
 
    
     // Brute-force kNN kernel -----------------
     __global__ void knn_bruteforce_kernel(
         int n, int d, int k,
-        const float* coords,
-        const float* corr_diag,
-        const float* chol_ip_cross_cov,
+        const double* coords,              // [n * d], row-major
+        const double* corr_diag,           // [n]
+        const double* chol_ip_cross_cov,   // [num_ip * n]
         int num_ip,
-        const float var,
+        const double var,
         const int shape,
-        const float range,
-        float EPSILON_NUMBERS,
+        const double range,
+        double EPSILON_NUMBERS,
         int dist_funct,
-        int* knn_idx,
+        int* knn_idx,   // [n * k], output
         int start_at
     ) {
+        
         if (k > MAX_K) return;
 
-        int i = blockIdx.x + start_at;
+        int i = blockIdx.x + start_at;   // one block per query point
         if (i >= n) return;
-
+       
         int tid = threadIdx.x;
 
-        extern __shared__ float shmem[];
-        float* dist_buf = shmem;               // [blockDim.x * k]
+        extern __shared__ double shmem[];
+        double* dist_buf = shmem;          // [blockDim.x * k]
         int* idx_buf = (int*)&dist_buf[blockDim.x * k];
-
-        // local top-k
-        float local_dist[MAX_K];
+        // local top-k buffers
+        double local_dist[MAX_K];
         int local_idx[MAX_K];
         for (int kk = 0; kk < k; kk++) {
-            local_dist[kk] = CUDART_INF_F;
+            local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
-
-        // loop over candidates
+        // each thread checks candidates j < i
         for (int j = tid; j < i; j += blockDim.x) {
-            float dij = distances_funct_device(
-                i, j, num_ip, coords, d, corr_diag, chol_ip_cross_cov,
-                dist_funct, var, shape, range, EPSILON_NUMBERS);
+            // call your distance function with single j
+            double dij = distances_funct_device(i,j,num_ip,coords,d,corr_diag,chol_ip_cross_cov,dist_funct,
+                var, shape, range,EPSILON_NUMBERS);
 
+            // insert into local top-k
             int worst = 0;
             for (int kk = 1; kk < k; kk++) {
                 if (local_dist[kk] > local_dist[worst]) worst = kk;
@@ -179,26 +183,25 @@ namespace GPBoost {
                 local_idx[worst] = j;
             }
         }
-
-        // write to shared memory
+        // write local results to shared memory
         for (int kk = 0; kk < k; kk++) {
             dist_buf[tid * k + kk] = local_dist[kk];
             idx_buf[tid * k + kk] = local_idx[kk];
         }
         __syncthreads();
 
-        // reduction
+        // block reduction: keep only best k
         if (tid == 0) {
-            float final_dist[MAX_K];
+            double final_dist[MAX_K];
             int final_idx[MAX_K];
             for (int kk = 0; kk < k; kk++) {
-                final_dist[kk] = CUDART_INF_F;
+                final_dist[kk] = CUDART_INF;
                 final_idx[kk] = -1;
             }
 
             int total = blockDim.x * k;
             for (int t = 0; t < total; t++) {
-                float dval = dist_buf[t];
+                double dval = dist_buf[t];
                 int jval = idx_buf[t];
                 if (jval < 0) continue;
 
@@ -212,9 +215,9 @@ namespace GPBoost {
                 }
             }
 
-            // insertion sort
+            // insertion sort: sort results ascending (closest first)
             for (int a = 1; a < k; a++) {
-                float key_dist = final_dist[a];
+                double key_dist = final_dist[a];
                 int key_idx = final_idx[a];
                 int b = a - 1;
                 while (b >= 0 && final_dist[b] > key_dist) {
@@ -226,6 +229,7 @@ namespace GPBoost {
                 final_idx[b + 1] = key_idx;
             }
 
+            // write out
             for (int kk = 0; kk < k; kk++) {
                 knn_idx[(i - start_at) * k + kk] = final_idx[kk];
             }
@@ -252,38 +256,38 @@ namespace GPBoost {
         int total_threads = num_data - start_at;
 
         // --- allocate device memory ---
-        float* d_coords = nullptr;
-        float* d_corr_diag = nullptr;
-        float* d_chol_ip_cross_cov = nullptr;
+        double* d_coords = nullptr;
+        double* d_corr_diag = nullptr;
+        double* d_chol_ip_cross_cov = nullptr;
         int* d_neighbors = nullptr;
 
         den_mat_t chol_ip_cross_cov_T = chol_ip_cross_cov.transpose();
-        Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords.cast<float>();
-        Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> chol_ip_cross_cov_row = chol_ip_cross_cov_T.cast<float>();
-        Eigen::VectorXf corr_diag_row = corr_diag.cast<float>();
-        CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(float)));
-        CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(float)));
-        CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov_row.size() * sizeof(float)));
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> chol_ip_cross_cov_row = chol_ip_cross_cov_T;
+
+        CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov_row.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
 
         // --- copy data to device ---
-        CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(float), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag_row.data(), corr_diag_row.size() * sizeof(float), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov_row.data(), chol_ip_cross_cov_row.size() * sizeof(float), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
-        int threads = 256;
+        int threads = 128;
         int blocks = total_threads;   // one block per query point
-        size_t shmem_size = threads * num_neighbors * (sizeof(float) + sizeof(int));
+        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
             d_coords,
             d_corr_diag,
             d_chol_ip_cross_cov,
             (int)chol_ip_cross_cov.rows(), // num_ip
-            (float)var,
+            var,
             shape,
-            (float)range,
-            (float)EPSILON_NUMBERS,
+            range,
+            EPSILON_NUMBERS,
             dist_funct,
             d_neighbors,
             start_at
