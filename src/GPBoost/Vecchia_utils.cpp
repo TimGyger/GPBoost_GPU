@@ -420,7 +420,7 @@ namespace GPBoost {
 				int cov_fct_shape = (int)(re_comp->CovFunctionShape() * 10);
 				vec_t pars = re_comp->CovPars();
 				string_t covfct = re_comp->CovFunctionName();
-				double range_param = (covfct == "matern_ard") ? pars[1] : 1;
+				double range_param = (covfct == "matern_ard") ? 1. : pars[1];
 				double var = pars[0];
 				int dist_funct = 1;
 				bool success = false;

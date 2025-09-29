@@ -108,25 +108,17 @@ namespace GPBoost {
             for (int d = 0; d < num_ip; d++) {
                 double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
                 double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
-                dot += a * b;
+                dot = fma(a, b, dot);
             }
             // Step 2: Euclidean distance if needed
             double sum = 0.0;
-            double dist_ij;
             for (int d = 0; d < dim_coords; d++) {
                 double diff = coords[coords_ind_j * dim_coords + d] -
                     coords[coord_ind_i * dim_coords + d];
-                sum += diff * diff;
+                sum = fma(diff, diff, sum);
             }
-            dist_ij = sqrt(sum);
-            double cov;
-            if (dist_ij < EPSILON_NUMBERS) {
-                cov = var;
-            }
-            else {
-                double range_dist = range * dist_ij;
-                cov = Matern_GPU_case(var, range_dist, shape);
-            }
+            double range_dist = range * sqrt(sum);
+            double cov = Matern_GPU_case(var, range_dist, shape);
             //double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
             // Step 3: compute final residual distance
             double diag_i = corr_diag[coord_ind_i];
