@@ -25,6 +25,7 @@ using LightGBM::Log;
 #ifndef CUDART_INF
 #define CUDART_INF __longlong_as_double(0x7ff0000000000000ULL)
 #endif
+#define CUDART_INF_F __int_as_float(0x7f800000)
 
 // Maximum neighbor size per data point
 #define MAX_K 64
