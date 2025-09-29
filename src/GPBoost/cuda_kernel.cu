@@ -76,7 +76,7 @@ namespace GPBoost {
     }
 
     __device__ double Matern_GPU_case(double var, double range_dist, int shape) {
-        switch (shap) {
+        switch (shape) {
         case 5:  return var * exp(-range_dist);
         case 15: return var * (1. + range_dist) * exp(-range_dist);
         case 25: return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
@@ -97,7 +97,7 @@ namespace GPBoost {
         int dist_funct,             // which distance is used
         const double var,
         const int shape,
-        double range,
+        const double range,
         double EPSILON_NUMBERS
     ) {
         // Grab reference column for coord_ind_i
@@ -151,7 +151,7 @@ namespace GPBoost {
         int num_ip,
         const double var,
         const int shape,
-        double range,
+        const double range,
         double EPSILON_NUMBERS,
         int dist_funct,
         int* knn_idx,   // [n * k], output
@@ -252,9 +252,9 @@ namespace GPBoost {
         int dim_coords,
         const vec_t& corr_diag,
         const den_mat_t& chol_ip_cross_cov,
-        const vec_t& pars,
-        int shape,
-        bool ard,
+        const double var,
+        const int shape,
+        const double range,
         double EPSILON_NUMBERS,
         int dist_funct,
         std::vector<std::vector<int>>& neighbors
@@ -267,7 +267,6 @@ namespace GPBoost {
         double* d_coords = nullptr;
         double* d_corr_diag = nullptr;
         double* d_chol_ip_cross_cov = nullptr;
-        double* d_pars = nullptr;    
         int* d_neighbors = nullptr;
 
         den_mat_t chol_ip_cross_cov_T = chol_ip_cross_cov.transpose();
@@ -278,13 +277,11 @@ namespace GPBoost {
         CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov_row.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
-        CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
 
         // --- copy data to device ---
         CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
         int threads = 128;
         int blocks = total_threads;   // one block per query point
@@ -295,9 +292,9 @@ namespace GPBoost {
             d_corr_diag,
             d_chol_ip_cross_cov,
             (int)chol_ip_cross_cov.rows(), // num_ip
-            d_pars,
+            var,
             shape,
-            ard,
+            range,
             EPSILON_NUMBERS,
             dist_funct,
             d_neighbors,
@@ -333,7 +330,6 @@ namespace GPBoost {
         cudaFree(d_coords);
         cudaFree(d_corr_diag);
         cudaFree(d_chol_ip_cross_cov);
-        cudaFree(d_pars);
         cudaFree(d_neighbors);
         printf("kNN5\n"); fflush(stdout);
         return true;

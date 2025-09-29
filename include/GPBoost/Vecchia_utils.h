@@ -33,7 +33,7 @@ namespace GPBoost {
 		const den_mat_t& chol_ip_cross_cov,
 		const double var,
 		const int shape,
-		double range,
+		const double range,
 		double EPSILON_NUMBERS,
 		int dist_funct,
 		std::vector<std::vector<int>>& neighbors
