@@ -263,7 +263,7 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
-        int threads = 256;
+        int threads = 128;
         int blocks = total_threads;   // one block per query point
         size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
