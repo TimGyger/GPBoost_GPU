@@ -139,39 +139,46 @@ namespace GPBoost {
         
         if (k > MAX_K) return;
 
-        int i = blockIdx.x + start_at;  // one block per query point
+        int i = blockIdx.x + start_at;   // one block per query point
         if (i >= n) return;
-
+       
         int tid = threadIdx.x;
 
-        // --- shared memory: one candidate per thread ---
         extern __shared__ double shmem[];
-        double* cand_dist = shmem;                  // [blockDim.x]
-        int* cand_idx = (int*)&cand_dist[blockDim.x]; // [blockDim.x]
-
-        // --- each thread finds its own best candidate ---
-        double best_d = CUDART_INF;
-        int best_j = -1;
-
+        double* dist_buf = shmem;          // [blockDim.x]
+        int* idx_buf = (int*)&dist_buf[blockDim.x * k];
+        // local top-k buffers
+        double local_dist[MAX_K];
+        int local_idx[MAX_K];
+        for (int kk = 0; kk < k; kk++) {
+            local_dist[kk] = CUDART_INF;
+            local_idx[kk] = -1;
+        }
+        // each thread checks candidates j < i
         for (int j = tid; j < i; j += blockDim.x) {
-            double dij = distances_funct_device(
-                i, j, num_ip, coords, d, corr_diag, chol_ip_cross_cov,
-                dist_funct, pars, shape, ard, EPSILON_NUMBERS);
+            // call your distance function with single j
+            double dij = distances_funct_device(i,j,num_ip,coords,d,corr_diag,chol_ip_cross_cov,dist_funct,
+                pars,shape,ard,EPSILON_NUMBERS);
 
-            if (dij < best_d) {
-                best_d = dij;
-                best_j = j;
+            // insert into local top-k
+            int worst = 0;
+            for (int kk = 1; kk < k; kk++) {
+                if (local_dist[kk] > local_dist[worst]) worst = kk;
+            }
+            if (dij < local_dist[worst]) {
+                local_dist[worst] = dij;
+                local_idx[worst] = j;
             }
         }
-
-        // store candidate in shared memory
-        cand_dist[tid] = best_d;
-        cand_idx[tid] = best_j;
+        // write local results to shared memory
+        for (int kk = 0; kk < k; kk++) {
+            dist_buf[tid * k + kk] = local_dist[kk];
+            idx_buf[tid * k + kk] = local_idx[kk];
+        }
         __syncthreads();
 
-        // --- block reduction: thread 0 collects top-k from all candidates ---
+        // block reduction: keep only best k
         if (tid == 0) {
-            // simple array for final selection
             double final_dist[MAX_K];
             int final_idx[MAX_K];
             for (int kk = 0; kk < k; kk++) {
@@ -179,10 +186,10 @@ namespace GPBoost {
                 final_idx[kk] = -1;
             }
 
-            // select k smallest among blockDim.x candidates
-            for (int t = 0; t < blockDim.x; t++) {
-                double dval = cand_dist[t];
-                int jval = cand_idx[t];
+            int total = blockDim.x * k;
+            for (int t = 0; t < total; t++) {
+                double dval = dist_buf[t];
+                int jval = idx_buf[t];
                 if (jval < 0) continue;
 
                 int worst = 0;
@@ -195,21 +202,21 @@ namespace GPBoost {
                 }
             }
 
-            // sort ascending
+            // insertion sort: sort results ascending (closest first)
             for (int a = 1; a < k; a++) {
-                double key_d = final_dist[a];
-                int key_i = final_idx[a];
+                double key_dist = final_dist[a];
+                int key_idx = final_idx[a];
                 int b = a - 1;
-                while (b >= 0 && final_dist[b] > key_d) {
+                while (b >= 0 && final_dist[b] > key_dist) {
                     final_dist[b + 1] = final_dist[b];
                     final_idx[b + 1] = final_idx[b];
                     b--;
                 }
-                final_dist[b + 1] = key_d;
-                final_idx[b + 1] = key_i;
+                final_dist[b + 1] = key_dist;
+                final_idx[b + 1] = key_idx;
             }
 
-            // write result
+            // write out
             for (int kk = 0; kk < k; kk++) {
                 knn_idx[(i - start_at) * k + kk] = final_idx[kk];
             }
@@ -256,9 +263,9 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
-        int threads = 128;
-        int blocks = total_threads;
-        size_t shmem_size = threads * (sizeof(double) + sizeof(int));
+        int threads = 256;
+        int blocks = total_threads;   // one block per query point
+        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
             d_coords,
@@ -285,7 +292,7 @@ namespace GPBoost {
             fprintf(stderr, "kNN kernel execution failed: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
             return false;
         }
-
+        printf("kNN21\n"); fflush(stdout);
         // --- copy back results ---
         std::vector<int> h_neighbors(total_threads * num_neighbors);
 
