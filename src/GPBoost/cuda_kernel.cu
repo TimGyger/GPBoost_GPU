@@ -272,7 +272,7 @@ namespace GPBoost {
         // --- launch kernel ---
         int threads = 128;  // threads per block
         int blocks = (total_threads + QUERIES_PER_BLOCK - 1) / QUERIES_PER_BLOCK;
-        size_t shmem_size = threads * k * (sizeof(double) + sizeof(int));
+        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
 
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
