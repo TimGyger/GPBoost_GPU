@@ -417,20 +417,22 @@ namespace GPBoost {
 				}
 			}
 			if (GPU_use) {
-				double cov_fct_shape = re_comp->CovFunctionShape();
+				int cov_fct_shape = (int)(re_comp->CovFunctionShape() * 10);
 				vec_t pars = re_comp->CovPars();
 				string_t covfct = re_comp->CovFunctionName();
-				bool ard = (covfct == "matern_ard");
+				double range_param = (covfct == "matern_ard") ? pars[1] : 1;
+				double var = pars[0];
 				int dist_funct = 1;
 				bool success = false;
+				if (cov_fct_shape == 5 || cov_fct_shape == 15 || cov_fct_shape == 25) {
 #ifdef USE_CUDA_GP
-				success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors,
-					brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov, pars,
-					cov_fct_shape, ard, EPSILON_NUMBERS, dist_funct,neighbors);
+					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors,
+						brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov, var,
+						cov_fct_shape, range_param, EPSILON_NUMBERS, dist_funct, neighbors);
 #endif 
+				}
 				if (!success) {
 					Log::REInfo("GPU neighbor search failed! Restart on CPU!");
-					std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 					find_nearest_neighbors_Vecchia_FSA_fast(coords,num_data,num_neighbors,chol_ip_cross_cov,re_comps_vecchia_cluster_i,
 						neighbors,dist_obs_neighbors,dist_between_neighbors,start_at,end_search_at,check_has_duplicates,save_distances,
 						prediction,cond_on_all,num_data_obs,num_cov_trees,false);

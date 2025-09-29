@@ -75,6 +75,16 @@ namespace GPBoost {
         }
     }
 
+    __device__ double Matern_GPU_case(double var, double range_dist, int shape) {
+        switch (shap) {
+        case 5:  return var * exp(-range_dist);
+        case 15: return var * (1. + range_dist) * exp(-range_dist);
+        case 25: return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
+        default: return 0.0;
+        }
+    }
+
+
     // Device function: compute distance
     __device__ double distances_funct_device(
         int coord_ind_i,            // index i
@@ -85,9 +95,9 @@ namespace GPBoost {
         const double* corr_diag,    // [num_data]
         const double* chol_ip_cross_cov, // [num_ip * num_data] 
         int dist_funct,             // which distance is used
-        const double* __restrict__ pars,
-        const double shape,
-        bool ard,
+        const double var,
+        const int shape,
+        double range,
         double EPSILON_NUMBERS
     ) {
         // Grab reference column for coord_ind_i
@@ -109,13 +119,24 @@ namespace GPBoost {
                 sum += diff * diff;
             }
             dist_ij = sqrt(sum);
-            double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
+            double cov;
+            if (dist_ij < EPSILON_NUMBERS) {
+                cov = var;
+            }
+            else {
+                double range_dist = range * dist_ij;
+                cov = Matern_GPU_case(var, range_dist, shape);
+            }
+            //double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
             // Step 3: compute final residual distance
             double diag_i = corr_diag[coord_ind_i];
             double diag_j = corr_diag[coords_ind_j];
-            double val = (cov - dot) * rsqrt(diag_i * diag_j);
-            double tmp = 1.0 - fabs(val);
-            return (tmp > 0.0) ? sqrt(tmp) : 0.0;
+            //double val = (cov - dot) * rsqrt(diag_i * diag_j);
+            //double tmp = 1.0 - fabs(val);
+            double num = cov - dot;
+            double tmp = diag_i * diag_j / (num * num);
+            //return (tmp > 0.0) ? sqrt(tmp) : 0.0;
+            return tmp;
         }
         return CUDART_INF;
     }
@@ -128,9 +149,9 @@ namespace GPBoost {
         const double* corr_diag,           // [n]
         const double* chol_ip_cross_cov,   // [num_ip * n]
         int num_ip,
-        const double* __restrict__  pars,
-        double shape,
-        bool ard,
+        const double var,
+        const int shape,
+        double range,
         double EPSILON_NUMBERS,
         int dist_funct,
         int* knn_idx,   // [n * k], output
@@ -158,7 +179,7 @@ namespace GPBoost {
         for (int j = tid; j < i; j += blockDim.x) {
             // call your distance function with single j
             double dij = distances_funct_device(i,j,num_ip,coords,d,corr_diag,chol_ip_cross_cov,dist_funct,
-                pars,shape,ard,EPSILON_NUMBERS);
+                var, shape, range,EPSILON_NUMBERS);
 
             // insert into local top-k
             int worst = 0;
@@ -232,7 +253,7 @@ namespace GPBoost {
         const vec_t& corr_diag,
         const den_mat_t& chol_ip_cross_cov,
         const vec_t& pars,
-        double shape,
+        int shape,
         bool ard,
         double EPSILON_NUMBERS,
         int dist_funct,

@@ -31,9 +31,9 @@ namespace GPBoost {
 		int dim_coords,
 		const vec_t& corr_diag,
 		const den_mat_t& chol_ip_cross_cov,
-		const vec_t& pars,
-		double shape,
-		bool ard,
+		const double var,
+		const int shape,
+		double range,
 		double EPSILON_NUMBERS,
 		int dist_funct,
 		std::vector<std::vector<int>>& neighbors
