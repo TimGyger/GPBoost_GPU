@@ -147,10 +147,6 @@ namespace GPBoost {
         extern __shared__ double shmem[];
         double* dist_buf = shmem;          // [blockDim.x]
         int* idx_buf = (int*)&dist_buf[blockDim.x * k];
-        if (i == 0 && tid == 0) {
-            printf("Test1");
-        }
-
         // local top-k buffers
         double local_dist[MAX_K];
         int local_idx[MAX_K];
@@ -158,10 +154,6 @@ namespace GPBoost {
             local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
-        if (i == 0 && tid == 0) {
-            printf("Test2");
-        }
-
         // each thread checks candidates j < i
         for (int j = tid; j < i; j += blockDim.x) {
             // call your distance function with single j
@@ -178,19 +170,12 @@ namespace GPBoost {
                 local_idx[worst] = j;
             }
         }
-        if (i == 0 && tid == 0) {
-            printf("Test3");
-        }
-
         // write local results to shared memory
         for (int kk = 0; kk < k; kk++) {
             dist_buf[tid * k + kk] = local_dist[kk];
             idx_buf[tid * k + kk] = local_idx[kk];
         }
         __syncthreads();
-        if (i == 0 && tid == 0) {
-            printf("Test4");
-        }
 
         // block reduction: keep only best k
         if (tid == 0) {
@@ -236,10 +221,6 @@ namespace GPBoost {
                 knn_idx[(i - start_at) * k + kk] = final_idx[kk];
             }
         }
-        if (i == 0 && tid == 0) {
-            printf("Test5");
-        }
-
     }
 
     bool find_nearest_neighbors_bruteforce_GPU(
@@ -258,7 +239,6 @@ namespace GPBoost {
         std::vector<std::vector<int>>& neighbors
     ) {
 
-        printf("Testa\n"); fflush(stdout);
         // --- prepare sizes ---
         int total_threads = num_data - start_at;
 
@@ -268,7 +248,6 @@ namespace GPBoost {
         double* d_chol_ip_cross_cov = nullptr;
         double* d_pars = nullptr;    
         int* d_neighbors = nullptr;
-        printf("Testb\n"); fflush(stdout);
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
 
@@ -278,18 +257,15 @@ namespace GPBoost {
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
 
-        printf("Testc\n"); fflush(stdout);
         // --- copy data to device ---
         CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
-        printf("Testd\n"); fflush(stdout);
         // --- launch kernel ---
         int threads = 128;
         int blocks = total_threads;   // one block per query point
         size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
-        printf("Teste\n"); fflush(stdout);
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
             d_coords,
@@ -305,42 +281,31 @@ namespace GPBoost {
             start_at
             );
 
-        printf("Testf\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             fprintf(stderr, "kNN kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
-        printf("Testfe\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         cudaError_t execErr = cudaDeviceSynchronize();
         if (execErr != cudaSuccess) {
             fprintf(stderr, "kNN kernel execution failed: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
             return false;
         }
 
-        printf("Testg\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         // --- copy back results ---
         std::vector<int> h_neighbors(total_threads * num_neighbors);
 
         CUDA_CHECK(cudaMemcpy(h_neighbors.data(), d_neighbors, h_neighbors.size() * sizeof(int), cudaMemcpyDeviceToHost));
 
         // --- fill results ---
+#pragma omp parallel for schedule(static)
         for (int i = start_at; i < num_data; i++) {
             int max_neighbors = std::min(i, num_neighbors);
             //neighbors[i - start_at].resize(max_neighbors);
-            if (i == 10 || i == 50 || i == 100 || i == 1000) {
-                printf("Test %i\n", h_neighbors[(i - start_at) * num_neighbors + 0]); fflush(stdout);
-            }
             for (int j = 0; j < max_neighbors; j++) {
                 neighbors[i][j] = h_neighbors[(i - start_at) * num_neighbors + j];
             }
         }
-
-        printf("Testh\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         // --- cleanup ---
         cudaFree(d_coords);
         cudaFree(d_corr_diag);
@@ -348,8 +313,6 @@ namespace GPBoost {
         cudaFree(d_pars);
         cudaFree(d_neighbors);
 
-        printf("Testi\n"); fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         return true;
     }
 

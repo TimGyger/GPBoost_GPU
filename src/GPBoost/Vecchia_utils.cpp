@@ -1281,7 +1281,7 @@ namespace GPBoost {
 		std::chrono::steady_clock::time_point begin, end;//only for debugging
 		double el_time;//only for debugging
 		begin = std::chrono::steady_clock::now();//only for debugging
-		if (GPU_use){
+		if (GPU_use && gp_approx != "full_scale_vecchia"){
 			// Determine constants for derivative of covariance
 			double cov_fct_shape = re_comp->CovFunctionShape();
 			vec_t pars = re_comp->CovPars();
