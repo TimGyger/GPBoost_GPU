@@ -369,6 +369,53 @@ namespace GPBoost {
 		}
 		//Find neighbors for those points where the conditioning set (=candidate neighbors) is larger than 'num_neighbors'
 		if (num_data > num_neighbors) {
+			int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;//The first point (first_i) for which the search is done is the point with index (num_neighbors + 1) or start_at
+			// Brute force kNN search until certain number of data points
+			int brute_force_threshold = std::min(num_data, std::max(1000, num_neighbors));
+			if (prediction) {
+				brute_force_threshold = std::min(num_data, std::max(first_i + 500, num_neighbors));
+			}
+			int max_ind_nn = num_data_obs;
+			if (cond_on_all) {
+				max_ind_nn = num_data;
+			}
+#pragma omp parallel for schedule(static)
+			for (int i = first_i; i < brute_force_threshold; ++i) {
+				vec_t dist_vect(1);
+				std::vector<double> nn_corr(num_neighbors);
+#pragma omp parallel for schedule(static)
+				for (int j = 0; j < num_neighbors; ++j) {
+					nn_corr[j] = std::numeric_limits<double>::infinity();
+				}
+				for (int jj = 0; jj < (int)std::min(i, max_ind_nn); ++jj) {
+					std::vector<int> indj{ jj };
+					distances_funct(i, indj, coords, corr_diag, chol_ip_cross_cov,
+						re_comps_vecchia_cluster_i, dist_vect, dist_function, save_distances);
+					if (dist_vect[0] < nn_corr[num_neighbors - 1]) {
+						nn_corr[num_neighbors - 1] = dist_vect[0];
+						neighbors[i - start_at][num_neighbors - 1] = jj;
+						SortVectorsDecreasing<double>(nn_corr.data(), neighbors[i - start_at].data(), num_neighbors);
+					}
+				}
+				//Save distances between points and neighbors
+				if (save_distances) {
+					dist_obs_neighbors[i - start_at].resize(num_neighbors, 1);
+				}
+				for (int jjj = 0; jjj < num_nearest_neighbors; ++jjj) {
+					double dij = (coords(i, Eigen::all) - coords(neighbors[i - start_at][jjj], Eigen::all)).lpNorm<2>();
+					if (save_distances) {
+						dist_obs_neighbors[i - start_at](jjj, 0) = dij;
+					}
+					if (check_has_duplicates && !has_duplicates) {
+						if (dij < EPSILON_NUMBERS) {
+#pragma omp critical
+							{
+								has_duplicates = true;
+							}
+						}
+					}//end check_has_duplicates
+				}
+			}
 			if (GPU_use) {
 				double cov_fct_shape = re_comp->CovFunctionShape();
 				vec_t pars = re_comp->CovPars();
@@ -378,7 +425,7 @@ namespace GPBoost {
 				bool success = false;
 #ifdef USE_CUDA_GP
 				success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors,
-					start_at, (int)coords.cols(), corr_diag, chol_ip_cross_cov, pars,
+					brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov, pars,
 					cov_fct_shape, ard, EPSILON_NUMBERS, dist_funct,neighbors);
 #endif 
 				if (!success) {
@@ -391,53 +438,6 @@ namespace GPBoost {
 				}
 			}
 			else {
-				int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;//The first point (first_i) for which the search is done is the point with index (num_neighbors + 1) or start_at
-				// Brute force kNN search until certain number of data points
-				int brute_force_threshold = std::min(num_data, std::max(1000, num_neighbors));
-				if (prediction) {
-					brute_force_threshold = std::min(num_data, std::max(first_i + 500, num_neighbors));
-				}
-				int max_ind_nn = num_data_obs;
-				if (cond_on_all) {
-					max_ind_nn = num_data;
-				}
-#pragma omp parallel for schedule(static)
-				for (int i = first_i; i < brute_force_threshold; ++i) {
-					vec_t dist_vect(1);
-					std::vector<double> nn_corr(num_neighbors);
-#pragma omp parallel for schedule(static)
-					for (int j = 0; j < num_neighbors; ++j) {
-						nn_corr[j] = std::numeric_limits<double>::infinity();
-					}
-					for (int jj = 0; jj < (int)std::min(i, max_ind_nn); ++jj) {
-						std::vector<int> indj{ jj };
-						distances_funct(i, indj, coords, corr_diag, chol_ip_cross_cov,
-							re_comps_vecchia_cluster_i, dist_vect, dist_function, save_distances);
-						if (dist_vect[0] < nn_corr[num_neighbors - 1]) {
-							nn_corr[num_neighbors - 1] = dist_vect[0];
-							neighbors[i - start_at][num_neighbors - 1] = jj;
-							SortVectorsDecreasing<double>(nn_corr.data(), neighbors[i - start_at].data(), num_neighbors);
-						}
-					}
-					//Save distances between points and neighbors
-					if (save_distances) {
-						dist_obs_neighbors[i - start_at].resize(num_neighbors, 1);
-					}
-					for (int jjj = 0; jjj < num_nearest_neighbors; ++jjj) {
-						double dij = (coords(i, Eigen::all) - coords(neighbors[i - start_at][jjj], Eigen::all)).lpNorm<2>();
-						if (save_distances) {
-							dist_obs_neighbors[i - start_at](jjj, 0) = dij;
-						}
-						if (check_has_duplicates && !has_duplicates) {
-							if (dij < EPSILON_NUMBERS) {
-#pragma omp critical
-								{
-									has_duplicates = true;
-								}
-							}
-						}//end check_has_duplicates
-					}
-				}
 				if (brute_force_threshold < num_data) {
 					int level = 0;
 					// Build CoverTree

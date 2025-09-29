@@ -133,13 +133,12 @@ namespace GPBoost {
         bool ard,
         double EPSILON_NUMBERS,
         int dist_funct,
-        int* knn_idx,   // [n * k], output
-        int start_at
+        int* knn_idx   // [n * k], output
     ) {
         
         if (k > MAX_K) return;
 
-        int i = blockIdx.x + start_at;   // one block per query point
+        int i = blockIdx.x;   // one block per query point
         if (i >= n) return;
        
         int tid = threadIdx.x;
@@ -218,7 +217,7 @@ namespace GPBoost {
 
             // write out
             for (int kk = 0; kk < k; kk++) {
-                knn_idx[(i - start_at) * k + kk] = final_idx[kk];
+                knn_idx[i * k + kk] = final_idx[kk];
             }
         }
     }
