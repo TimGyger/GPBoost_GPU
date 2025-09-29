@@ -84,6 +84,25 @@ namespace GPBoost {
         }
     }
 
+    __device__ double warp_dot(const float* __restrict__ A,
+        int num_ip,
+        int i, int j) {
+        double sum = 0.0;
+        int lane = threadIdx.x % warpSize;
+
+        // each lane accumulates part of the dot product
+        for (int d = lane; d < num_ip; d += warpSize) {
+            float ai = A[i * num_ip + d];
+            float aj = A[j * num_ip + d];
+            sum = fma((double)ai, (double)aj, sum);
+        }
+
+        // warp reduction
+        for (int offset = 16; offset > 0; offset >>= 1)
+            sum += __shfl_down_sync(0xffffffff, sum, offset);
+
+        return sum; // valid in lane 0
+    }
 
     // Device function: compute distance
     __device__ double distances_funct_device(
@@ -104,12 +123,10 @@ namespace GPBoost {
         // (assuming chol_ip_cross_cov is column-major: dim_coords x num_data)
         if (dist_funct == 1) {
             // Step 1: dot product
-            double dot = 0.0;
-            for (int d = 0; d < num_ip; d++) {
-                double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
-                double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
-                dot = fma(a, b, dot);
-            }
+            double dot = warp_dot(chol_ip_cross_cov, num_ip, coord_ind_i, coords_ind_j);
+
+            // only lane 0 has valid result
+            if ((threadIdx.x % warpSize) != 0) return CUDART_INF;
             // Step 2: Euclidean distance
             double sum = 0.0;
             for (int d = 0; d < dim_coords; d++) {
@@ -261,13 +278,11 @@ namespace GPBoost {
         double* d_chol_ip_cross_cov = nullptr;
         int* d_neighbors = nullptr;
 
-        den_mat_t chol_ip_cross_cov_T = chol_ip_cross_cov.transpose();
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
-        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> chol_ip_cross_cov_row = chol_ip_cross_cov_T;
 
         CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov_row.size() * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
 
         // --- copy data to device ---
