@@ -7,6 +7,8 @@
 * Licensed under the Apache License Version 2.0. See LICENSE file in the project root for license information.
 */
 #ifdef USE_CUDA_GP
+#include <chrono>  // only for debugging
+#include <thread> // only for debugging
 #include <cstdio>
 #include <math.h>
 #include <GPBoost/GP_utils.h>
@@ -231,7 +233,7 @@ namespace GPBoost {
 
             // write out
             for (int kk = 0; kk < k; kk++) {
-                knn_idx[i * k + kk] = final_idx[kk];
+                knn_idx[(i - start_at) * k + kk] = final_idx[kk];
             }
         }
         if (i == 0 && tid == 0) {
@@ -304,11 +306,14 @@ namespace GPBoost {
             );
 
         printf("Testf\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             fprintf(stderr, "kNN kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
+        printf("Testfe\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         cudaError_t execErr = cudaDeviceSynchronize();
         if (execErr != cudaSuccess) {
             fprintf(stderr, "kNN kernel execution failed: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
@@ -316,6 +321,7 @@ namespace GPBoost {
         }
 
         printf("Testg\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         // --- copy back results ---
         std::vector<int> h_neighbors(total_threads * num_neighbors);
 
@@ -331,6 +337,7 @@ namespace GPBoost {
         }
 
         printf("Testh\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         // --- cleanup ---
         cudaFree(d_coords);
         cudaFree(d_corr_diag);
@@ -339,6 +346,7 @@ namespace GPBoost {
         cudaFree(d_neighbors);
 
         printf("Testi\n"); fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         return true;
     }
 
