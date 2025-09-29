@@ -139,15 +139,13 @@ namespace GPBoost {
 
         int i = blockIdx.x + start_at;   // one block per query point
         if (i >= n) return;
-        if (i == 0 || i == 10) {
-            printf("Test1");
-        }
+       
         int tid = threadIdx.x;
 
         extern __shared__ double shmem[];
         double* dist_buf = shmem;          // [blockDim.x]
         int* idx_buf = (int*)&dist_buf[blockDim.x];
-        if (tid == 0 || tid == 10) {
+        if (i == 0 && tid == 0) {
             printf("Test1");
         }
 
@@ -158,7 +156,7 @@ namespace GPBoost {
             local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
-        if (tid == 0 || tid == 10) {
+        if (i == 0 && tid == 0) {
             printf("Test2");
         }
 
@@ -178,7 +176,7 @@ namespace GPBoost {
                 local_idx[worst] = j;
             }
         }
-        if (tid == 1 || tid == 10) {
+        if (i == 0 && tid == 0) {
             printf("Test3");
         }
 
@@ -188,7 +186,7 @@ namespace GPBoost {
             idx_buf[tid * k + kk] = local_idx[kk];
         }
         __syncthreads();
-        if (tid == 1 || tid == 10) {
+        if (i == 0 && tid == 0) {
             printf("Test4");
         }
 
@@ -236,7 +234,7 @@ namespace GPBoost {
                 knn_idx[i * k + kk] = final_idx[kk];
             }
         }
-        if (tid == 1 || tid == 10) {
+        if (i == 0 && tid == 0) {
             printf("Test5");
         }
 
