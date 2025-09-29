@@ -138,7 +138,9 @@ namespace GPBoost {
 
         int i = blockIdx.x;   // one block per query point
         if (i >= n) return;
-
+        if (i == 1 || i == 10) {
+            printf("Test1");
+        }
         int tid = threadIdx.x;
 
         extern __shared__ double shmem[];
