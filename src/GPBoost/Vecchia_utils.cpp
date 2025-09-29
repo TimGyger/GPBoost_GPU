@@ -381,6 +381,7 @@ namespace GPBoost {
 #endif 
 				if (!success) {
 					Log::REInfo("GPU neighbor search failed! Restart on CPU!");
+					std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 					find_nearest_neighbors_Vecchia_FSA_fast(coords,num_data,num_neighbors,chol_ip_cross_cov,re_comps_vecchia_cluster_i,
 						neighbors,dist_obs_neighbors,dist_between_neighbors,start_at,end_search_at,check_has_duplicates,save_distances,
 						prediction,cond_on_all,num_data_obs,num_cov_trees,false);
@@ -589,6 +590,8 @@ namespace GPBoost {
 				}
 			}
 		}
+		Log::REInfo("Test! %i %i %i %i", neighbors[500][0], neighbors[500][1], neighbors[500][2], neighbors[500][3]);
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 		// Calculate distances among neighbors
 		int first_i = (start_at == 0) ? 1 : start_at;
 #pragma omp parallel for schedule(static)
@@ -638,6 +641,9 @@ namespace GPBoost {
 		if (check_has_duplicates) {
 			check_has_duplicates = has_duplicates;
 		}
+
+		Log::REInfo("Test=!");
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 	}//end find_nearest_neighbors_Vecchia_FSA_fast
 
 	void find_nearest_neighbors_Vecchia(den_mat_t& dist,
