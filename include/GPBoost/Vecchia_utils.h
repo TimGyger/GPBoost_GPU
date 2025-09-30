@@ -36,7 +36,8 @@ namespace GPBoost {
 		const double range,
 		double EPSILON_NUMBERS,
 		int dist_funct,
-		std::vector<std::vector<int>>& neighbors
+		std::vector<std::vector<int>>& neighbors,
+		int start_dim
 	);
 
 	bool find_nearest_neighbors_Vecchia_fast_GPU(

@@ -191,7 +191,7 @@ namespace GPBoost {
                 double diff = coord_j_ptr[dd] - coord_i_ptr[dd];
                 sum = fma(diff, diff, sum);
             }
-            double inv_r = rsqrt(sum + EPSILON_NUMBERS);
+            double inv_r = rsqrt(sum);
             double range_dist = 0.;
             double var = pars[0];
             double dot = 0.0;
@@ -291,7 +291,8 @@ namespace GPBoost {
         const double range,
         double EPSILON_NUMBERS,
         int dist_funct,
-        std::vector<std::vector<int>>& neighbors
+        std::vector<std::vector<int>>& neighbors,
+        int start_dim
     ) {
 
         // --- prepare sizes ---
@@ -328,7 +329,7 @@ namespace GPBoost {
                 d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
                 (int)chol_ip_cross_cov.rows(),
                 range, EPSILON_NUMBERS, dist_funct,
-                d_neighbors, start_at, dim_coords
+                d_neighbors, start_at, start_dim
                 );
             break;
         case 15:
@@ -337,7 +338,7 @@ namespace GPBoost {
                 d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
                 (int)chol_ip_cross_cov.rows(),
                 range, EPSILON_NUMBERS, dist_funct,
-                d_neighbors, start_at, dim_coords
+                d_neighbors, start_at, start_dim
                 );
             break;
         case 25:
@@ -346,7 +347,7 @@ namespace GPBoost {
                 d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
                 (int)chol_ip_cross_cov.rows(),
                 range, EPSILON_NUMBERS, dist_funct,
-                d_neighbors, start_at, dim_coords
+                d_neighbors, start_at, start_dim
                 );
             break;
         default:

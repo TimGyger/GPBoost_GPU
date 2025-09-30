@@ -423,8 +423,10 @@ namespace GPBoost {
 				vec_t pars = re_comp->CovPars();
 				string_t covfct = re_comp->CovFunctionName();
 				double cov_fct_shape;
+				int start_dim = 0;
 				if (covfct == "space_time_gneiting") {
 					cov_fct_shape = pars[4];
+					start_dim = 1;
 				}
 				else {
 					cov_fct_shape = re_comp->CovFunctionShape();
@@ -444,7 +446,7 @@ namespace GPBoost {
 #ifdef USE_CUDA_GP
 					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors, pars,
 						brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov, 
-						cov_fct_shape_int, range_param, EPSILON_NUMBERS, dist_funct, neighbors);
+						cov_fct_shape_int, range_param, EPSILON_NUMBERS, dist_funct, neighbors, start_dim);
 #endif 
 				}
 				if (!success) {
