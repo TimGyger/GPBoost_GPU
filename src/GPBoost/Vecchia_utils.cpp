@@ -374,7 +374,7 @@ namespace GPBoost {
 		if (num_data > num_neighbors) {
 			int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;//The first point (first_i) for which the search is done is the point with index (num_neighbors + 1) or start_at
 			// Brute force kNN search until certain number of data points
-			int brute_force_threshold = std::min(num_data, std::max(5000, num_neighbors));
+			int brute_force_threshold = std::min(num_data, std::max(1000, num_neighbors));
 			if (prediction) {
 				brute_force_threshold = std::min(num_data, std::max(first_i + 500, num_neighbors));
 			}
@@ -444,9 +444,9 @@ namespace GPBoost {
 				bool success = false;
 				if ((TwoNumbersAreEqual<double>(cov_fct_shape, 0.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 1.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) && dist_funct != 0) {
 #ifdef USE_CUDA_GP
-					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors, 
-						brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov,var, 
-						cov_fct_shape_int, range_param, EPSILON_NUMBERS, dist_funct, neighbors);
+					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors, pars,
+						brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov,
+						cov_fct_shape_int, range_param, EPSILON_NUMBERS, dist_funct, neighbors, start_dim);
 #endif 
 				}
 				if (!success) {
