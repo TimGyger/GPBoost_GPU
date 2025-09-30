@@ -27,17 +27,16 @@ namespace GPBoost {
 		const den_mat_t& coords,
 		int num_data,
 		int num_neighbors,
-		const vec_t& pars,
 		int start_at,
 		int dim_coords,
 		const vec_t& corr_diag,
 		const den_mat_t& chol_ip_cross_cov,
+		const double var,
 		const int shape,
 		const double range,
 		double EPSILON_NUMBERS,
 		int dist_funct,
-		std::vector<std::vector<int>>& neighbors,
-		int start_dim
+		std::vector<std::vector<int>>& neighbors
 	);
 
 	bool find_nearest_neighbors_Vecchia_fast_GPU(
