@@ -438,7 +438,6 @@ namespace GPBoost {
 				}
 				int cov_fct_shape_int = (int)(cov_fct_shape * 10);
 				double range_param = (covfct == "matern_ard") ? 1. : pars[1];
-				double var = pars[0];
 				
 				bool success = false;
 				if ((TwoNumbersAreEqual<double>(cov_fct_shape, 0.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 1.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) && dist_funct != 0) {
