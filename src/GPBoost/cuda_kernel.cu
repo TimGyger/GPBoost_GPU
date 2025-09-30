@@ -86,15 +86,15 @@ namespace GPBoost {
 
 
     // Device function: compute distance
-    __device__ double distances_funct_device(
-        int coord_ind_i,            // index i
-        int coords_ind_j,    // indices j
+    __device__ __forceinline__ double distances_funct_device(
+        double corr_diag_i,            // index i
+        double corr_diag_j,    // indices j
         int num_ip,                      // number of inducing points
-        const double* coords,       // [num_data * dim_coords], row-major
         int dim_coords,             // coordinate dimension
-        const double* corr_diag,    // [num_data]
-        const double* chol_ip_cross_cov, // [num_ip * num_data] 
-        int dist_funct,             // which distance is used
+        const double* __restrict__ col_i,      // precomputed
+        const double* __restrict__ col_j,      // precomputed
+        const double* __restrict__ coord_i_ptr,      // precomputed
+        const double* __restrict__ coord_j_ptr,      // precomputed
         const double var,
         const int shape,
         const double range,
@@ -102,52 +102,61 @@ namespace GPBoost {
     ) {
         // Grab reference column for coord_ind_i
         // (assuming chol_ip_cross_cov is column-major: dim_coords x num_data)
-        if (dist_funct == 1) {
-            // Step 1: dot product
-            double dot = 0.0;
-            for (int d = 0; d < num_ip; d++) {
-                double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
-                double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
-                dot = fma(a, b, dot);
-            }
-            // Step 2: Euclidean distance
-            double sum = 0.0;
-            for (int d = 0; d < dim_coords; d++) {
-                double diff = coords[coords_ind_j * dim_coords + d] -
-                    coords[coord_ind_i * dim_coords + d];
-                sum = fma(diff, diff, sum);
-            }
-            double range_dist = range * sqrt(sum);
-            double cov = Matern_GPU_case(var, range_dist, shape);
-            //double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
-            // Step 3: compute final residual distance
-            double diag_i = corr_diag[coord_ind_i];
-            double diag_j = corr_diag[coords_ind_j];
-            //double val = (cov - dot) * rsqrt(diag_i * diag_j);
-            //double tmp = 1.0 - fabs(val);
-            double num = cov - dot;
-            double tmp = diag_i * diag_j / (num * num);
-            //return (tmp > 0.0) ? sqrt(tmp) : 0.0;
-            return tmp;
+        // Step 1: dot product
+        double dot = 0.0;
+#pragma unroll 8
+        for (int d = 0; d < num_ip; d++) {
+            dot = fma(col_j[d], col_i[d], dot);
         }
-        return CUDART_INF;
+        //for (int d = 0; d < num_ip; d++) {
+         //   double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
+          //  double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
+           // dot = fma(a, b, dot);
+        //}
+        // Step 2: Euclidean distance
+        double sum = 0.0;
+        for (int d = 0; d < dim_coords; d++) {
+            double diff = coord_j_ptr[d] - coord_i_ptr[d];
+            sum = fma(diff, diff, sum);
+        }
+        double inv_r = rsqrt(sum + EPSILON_NUMBERS);
+        double range_dist = range / inv_r;
+        //double range_dist = range * sqrt(sum);
+        double cov = Matern_GPU_case(var, range_dist, shape);
+        //double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
+        // Step 3: compute final residual distance
+        //double diag_i = corr_diag[coord_ind_i];
+        //double diag_j = corr_diag[coords_ind_j];
+        //double val = (cov - dot) * rsqrt(diag_i * diag_j);
+        //double tmp = 1.0 - fabs(val);
+        double num = cov - dot;
+        //return (tmp > 0.0) ? sqrt(tmp) : 0.0;
+        return  corr_diag_i * corr_diag_j / (num * num);
     }
 
+    template<int shape>
+    __device__ double Cov_GPU_case(double var, double range_dist) {
+        if constexpr (shape == 5)  return var * exp(-range_dist);
+        if constexpr (shape == 15) return var * (1. + range_dist) * exp(-range_dist);
+        if constexpr (shape == 25) return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
+        return 0.0;
+    }
    
     // Brute-force kNN kernel -----------------
+    template<int shape>
     __global__ void knn_bruteforce_kernel(
         int n, int d, int k,
         const double* coords,              // [n * d], row-major
         const double* corr_diag,           // [n]
         const double* chol_ip_cross_cov,   // [num_ip * n]
+        const double* __restrict__ pars,      // precomputed
         int num_ip,
-        const double var,
-        const int shape,
         const double range,
         double EPSILON_NUMBERS,
         int dist_funct,
         int* knn_idx,   // [n * k], output
-        int start_at
+        int start_at,
+        int start_dim
     ) {
         
         if (k > MAX_K) return;
@@ -167,11 +176,44 @@ namespace GPBoost {
             local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
+
+        const double* __restrict__ col_i = chol_ip_cross_cov + i * num_ip;
+        const double* __restrict__ coord_i_ptr = coords + i * d;
+        double corr_diag_i = corr_diag[i];
         // each thread checks candidates j < i
         for (int j = tid; j < i; j += blockDim.x) {
             // call your distance function with single j
-            double dij = distances_funct_device(i,j,num_ip,coords,d,corr_diag,chol_ip_cross_cov,dist_funct,
-                var, shape, range,EPSILON_NUMBERS);
+            const double* __restrict__ col_j = chol_ip_cross_cov + j * num_ip;
+            const double* __restrict__ coord_j_ptr = coords + j * d;
+            
+            double sum = 0.0;
+            for (int dd = start_dim; dd < d; dd++) {
+                double diff = coord_j_ptr[dd] - coord_i_ptr[dd];
+                sum = fma(diff, diff, sum);
+            }
+            double inv_r = rsqrt(sum + EPSILON_NUMBERS);
+            double range_dist = 0.;
+            double var = pars[0];
+            double dot = 0.0;
+#pragma unroll 8
+            for (int dd = 0; dd < num_ip; dd++) {
+                dot = fma(col_j[dd], col_i[dd], dot);
+            }
+            if (dist_funct == 1) {
+                range_dist = range / inv_r;
+            }
+            else if (dist_funct == 2) {
+                double dist_time_log = log(fabs(col_j[0] - col_i[0]));
+                double d_aux_time_log = log(pars[1] * exp(dist_time_log * 2 * pars[3]) + 1.);
+                range_dist = pars[2] / (exp(d_aux_time_log * pars[5] * 0.5) * inv_r);
+                var = pars[0] / (exp(d_aux_time_log * (pars[6] + pars[5] * (d - 1) * 0.5)));
+            }
+            double cov = Cov_GPU_case<shape>(var, range_dist);
+
+            double num = cov - dot;
+            double dij = corr_diag_i * corr_diag[j] / (num * num);
+            //double dij = distances_funct_device(corr_diag_i, corr_diag[j], num_ip, d, col_i, col_j, 
+            //    coord_i_ptr, coord_j_ptr, var, shape, range,EPSILON_NUMBERS);
 
             // insert into local top-k
             int worst = 0;
@@ -239,12 +281,12 @@ namespace GPBoost {
     bool find_nearest_neighbors_bruteforce_GPU(
         const den_mat_t& coords,
         int num_data,
-        int num_neighbors,      
+        int num_neighbors, 
+        const vec_t& pars,
         int start_at,
         int dim_coords,
         const vec_t& corr_diag,
         const den_mat_t& chol_ip_cross_cov,
-        const double var,
         const int shape,
         const double range,
         double EPSILON_NUMBERS,
@@ -259,37 +301,58 @@ namespace GPBoost {
         double* d_coords = nullptr;
         double* d_corr_diag = nullptr;
         double* d_chol_ip_cross_cov = nullptr;
+        double* d_pars = nullptr;
         int* d_neighbors = nullptr;
 
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
 
         CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov.size() * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
 
         // --- copy data to device ---
         CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
         int threads = 128;
         int blocks = total_threads;   // one block per query point
         size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
-        knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
-            num_data, dim_coords, num_neighbors,
-            d_coords,
-            d_corr_diag,
-            d_chol_ip_cross_cov,
-            (int)chol_ip_cross_cov.rows(), // num_ip
-            var,
-            shape,
-            range,
-            EPSILON_NUMBERS,
-            dist_funct,
-            d_neighbors,
-            start_at
-            );
+        switch (shape) {
+        case 5:
+            knn_bruteforce_kernel<5> << <blocks, threads, shmem_size >> > (
+                num_data, dim_coords, num_neighbors,
+                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                (int)chol_ip_cross_cov.rows(),
+                range, EPSILON_NUMBERS, dist_funct,
+                d_neighbors, start_at, dim_coords
+                );
+            break;
+        case 15:
+            knn_bruteforce_kernel<15> << <blocks, threads, shmem_size >> > (
+                num_data, dim_coords, num_neighbors,
+                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                (int)chol_ip_cross_cov.rows(),
+                range, EPSILON_NUMBERS, dist_funct,
+                d_neighbors, start_at, dim_coords
+                );
+            break;
+        case 25:
+            knn_bruteforce_kernel<25> << <blocks, threads, shmem_size >> > (
+                num_data, dim_coords, num_neighbors,
+                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                (int)chol_ip_cross_cov.rows(),
+                range, EPSILON_NUMBERS, dist_funct,
+                d_neighbors, start_at, dim_coords
+                );
+            break;
+        default:
+            fprintf(stderr, "Unsupported shape=%d\n", shape); fflush(stdout);
+            return false;
+        }
         printf("kNN1\n"); fflush(stdout);
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
@@ -319,6 +382,7 @@ namespace GPBoost {
         // --- cleanup ---
         cudaFree(d_coords);
         cudaFree(d_corr_diag);
+        cudaFree(d_pars);
         cudaFree(d_chol_ip_cross_cov);
         cudaFree(d_neighbors);
         printf("kNN5\n"); fflush(stdout);

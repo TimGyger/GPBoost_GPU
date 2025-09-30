@@ -306,6 +306,9 @@ namespace GPBoost {
 		double el_time;//only for debugging
 		begin = std::chrono::steady_clock::now();//only for debugging
 		string_t dist_function = "residual_correlation_FSA";
+		if (chol_ip_cross_cov.size() == 0) {
+			dist_function = "correlation_Vecchia";
+		}
 		CHECK((int)neighbors.size() == (num_data - start_at));
 		if (save_distances) {
 			CHECK((int)dist_obs_neighbors.size() == (num_data - start_at));
@@ -417,18 +420,32 @@ namespace GPBoost {
 				}
 			}
 			if (GPU_use) {
-				int cov_fct_shape = (int)(re_comp->CovFunctionShape() * 10);
 				vec_t pars = re_comp->CovPars();
 				string_t covfct = re_comp->CovFunctionName();
+				double cov_fct_shape;
+				if (covfct == "space_time_gneiting") {
+					cov_fct_shape = pars[4];
+				}
+				else {
+					cov_fct_shape = re_comp->CovFunctionShape();
+				}
+				int dist_funct = 0;
+				if (dist_function == "correlation_Vecchia") {
+					dist_funct = 2;
+				}
+				else if (dist_function == "residual_correlation_FSA") {
+					dist_funct = 1;
+				}
+				int cov_fct_shape_int = (int)(cov_fct_shape * 10);
 				double range_param = (covfct == "matern_ard") ? 1. : pars[1];
 				double var = pars[0];
-				int dist_funct = 1;
+				
 				bool success = false;
-				if (cov_fct_shape == 5 || cov_fct_shape == 15 || cov_fct_shape == 25) {
+				if ((TwoNumbersAreEqual<double>(cov_fct_shape, 0.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 1.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) && dist_funct != 0) {
 #ifdef USE_CUDA_GP
-					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors,
-						brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov, var,
-						cov_fct_shape, range_param, EPSILON_NUMBERS, dist_funct, neighbors);
+					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors, pars,
+						brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov, 
+						cov_fct_shape_int, range_param, EPSILON_NUMBERS, dist_funct, neighbors);
 #endif 
 				}
 				if (!success) {
