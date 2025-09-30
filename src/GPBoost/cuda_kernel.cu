@@ -118,8 +118,7 @@ namespace GPBoost {
             // Step 2: Euclidean distance
             double sum = 0.0;
             for (int d = 0; d < dim_coords; d++) {
-                double diff = coord_i_ptr[d] -
-                    coord_j_ptr[d];
+                double diff = coord_i_ptr[d] - coord_j_ptr[d];
                 sum = fma(diff, diff, sum);
             }
             double cov = Matern_GPU_case(var, range * sqrt(sum), shape);
@@ -177,7 +176,7 @@ namespace GPBoost {
             const double* coord_j_ptr = coords + j * d;
             const double* chol_ip_cross_cov_j = chol_ip_cross_cov + j * num_ip;
             // call your distance function with single j
-            double dij = distances_funct_device(num_ip, coord_i_ptr, coord_j_ptr, chol_ip_cross_cov_i, chol_ip_cross_cov_j,d,corr_diag_i, corr_diag[j],dist_funct,
+            double dij = distances_funct_device(num_ip, coord_i_ptr, coord_j_ptr, chol_ip_cross_cov_i, chol_ip_cross_cov_j, corr_diag_i, corr_diag[j], d,dist_funct,
                 var, shape, range,EPSILON_NUMBERS);
 
             // insert into local top-k
