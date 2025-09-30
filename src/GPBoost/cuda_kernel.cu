@@ -142,65 +142,56 @@ namespace GPBoost {
         return 0.0;
     }
    
-    // Warp-level utility: find index of worst (max) value in small array
-    template<int K>
-    __device__ inline int find_worst(const double dist[K]) {
-        int worst = 0;
-        for (int kk = 1; kk < K; ++kk) {
-            if (dist[kk] > dist[worst]) worst = kk;
-        }
-        return worst;
-    }
-
-    template<int shape, int K>
-    __global__ void knn_warp_kernel(
-        int n, int d,
-        const double* __restrict__ coords,              // [n * d], row-major (or SOA if you transpose)
-        const double* __restrict__ corr_diag,           // [n]
-        const double* __restrict__ chol_ip_cross_cov,   // [num_ip * n]
-        const double* __restrict__ pars,
+    // Brute-force kNN kernel -----------------
+    template<int shape>
+    __global__ void knn_bruteforce_kernel(
+        int n, int d, int k,
+        const double* coords,              // [n * d], row-major
+        const double* corr_diag,           // [n]
+        const double* chol_ip_cross_cov,   // [num_ip * n]
+        const double* __restrict__ pars,      // precomputed
         int num_ip,
-        double range,
+        const double range,
         double EPSILON_NUMBERS,
         int dist_funct,
-        int* __restrict__ knn_idx,   // [n * K], output
+        int* knn_idx,   // [n * k], output
         int start_at,
         int start_dim
     ) {
-        // One warp per query
-        int warp_id_in_block = threadIdx.x / warpSize;
-        int lane = threadIdx.x % warpSize;
-        int global_warp_id = blockIdx.x * (blockDim.x / warpSize) + warp_id_in_block;
-        int i = global_warp_id + start_at;
-        if (i >= n) return;
+        
+        if (k > MAX_K) return;
 
-        // Init local top-K
-        double local_dist[K];
-        int local_idx[K];
-#pragma unroll
-        for (int kk = 0; kk < K; ++kk) {
+        int i = blockIdx.x + start_at;   // one block per query point
+        if (i >= n) return;
+       
+        int tid = threadIdx.x;
+
+        extern __shared__ double shmem[];
+        double* dist_buf = shmem;          // [blockDim.x * k]
+        int* idx_buf = (int*)&dist_buf[blockDim.x * k];
+        // local top-k buffers
+        double local_dist[MAX_K];
+        int local_idx[MAX_K];
+        for (int kk = 0; kk < k; kk++) {
             local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
 
-        // Pointers for query i
-        const double* col_i = chol_ip_cross_cov + i * num_ip;
-        const double* coord_i_ptr = coords + i * d;
+        const double* __restrict__ col_i = chol_ip_cross_cov + i * num_ip;
+        const double* __restrict__ coord_i_ptr = coords + i * d;
         double corr_diag_i = corr_diag[i];
-
-        // Each lane loops over candidates j
-        for (int j = lane; j < i; j += warpSize) {
-            const double* col_j = chol_ip_cross_cov + j * num_ip;
-            const double* coord_j_ptr = coords + j * d;
-
-            // distance in coordinate space
+        // each thread checks candidates j < i
+        for (int j = tid; j < i; j += blockDim.x) {
+            // call your distance function with single j
+            const double* __restrict__ col_j = chol_ip_cross_cov + j * num_ip;
+            const double* __restrict__ coord_j_ptr = coords + j * d;
+            
             double sum = 0.0;
             for (int dd = start_dim; dd < d; dd++) {
                 double diff = coord_j_ptr[dd] - coord_i_ptr[dd];
                 sum = fma(diff, diff, sum);
             }
-
-            double r = sqrt(sum);
+            double inv_r = rsqrt(sum);
             double range_dist = 0.;
             double var = pars[0];
             double dot = 0.0;
@@ -208,63 +199,81 @@ namespace GPBoost {
             for (int dd = 0; dd < num_ip; dd++) {
                 dot = fma(col_j[dd], col_i[dd], dot);
             }
-
             if (dist_funct == 1) {
-                range_dist = range * r;
+                range_dist = range / inv_r;
             }
             else if (dist_funct == 2) {
                 double dist_time_log = log(fabs(col_j[0] - col_i[0]));
                 double d_aux_time_log = log(pars[1] * exp(dist_time_log * 2 * pars[3]) + 1.);
-                range_dist = pars[2] / (exp(d_aux_time_log * pars[5] * 0.5) * (1.0 / r));
+                range_dist = pars[2] / (exp(d_aux_time_log * pars[5] * 0.5) * inv_r);
                 var = pars[0] / (exp(d_aux_time_log * (pars[6] + pars[5] * (d - 1) * 0.5)));
             }
-
             double cov = Cov_GPU_case<shape>(var, range_dist);
+
             double num = cov - dot;
             double dij = corr_diag_i * corr_diag[j] / (num * num);
+            //double dij = distances_funct_device(corr_diag_i, corr_diag[j], num_ip, d, col_i, col_j, 
+            //    coord_i_ptr, coord_j_ptr, var, shape, range,EPSILON_NUMBERS);
 
-            // Insert into local top-K
-            int worst = find_worst<K>(local_dist);
+            // insert into local top-k
+            int worst = 0;
+            for (int kk = 1; kk < k; kk++) {
+                if (local_dist[kk] > local_dist[worst]) worst = kk;
+            }
             if (dij < local_dist[worst]) {
                 local_dist[worst] = dij;
                 local_idx[worst] = j;
             }
         }
+        // write local results to shared memory
+        for (int kk = 0; kk < k; kk++) {
+            dist_buf[tid * k + kk] = local_dist[kk];
+            idx_buf[tid * k + kk] = local_idx[kk];
+        }
+        __syncthreads();
 
-        // Now we need to merge top-K across 32 lanes of this warp
-        // Strategy: lane 0 collects results with shuffles
-        for (int offset = 16; offset > 0; offset /= 2) {
-#pragma unroll
-            for (int kk = 0; kk < K; ++kk) {
-                double d_shfl = __shfl_down_sync(0xffffffff, local_dist[kk], offset);
-                int idx_shfl = __shfl_down_sync(0xffffffff, local_idx[kk], offset);
-                if (idx_shfl >= 0) {
-                    int worst = find_worst<K>(local_dist);
-                    if (d_shfl < local_dist[worst]) {
-                        local_dist[worst] = d_shfl;
-                        local_idx[worst] = idx_shfl;
-                    }
+        // block reduction: keep only best k
+        if (tid == 0) {
+            double final_dist[MAX_K];
+            int final_idx[MAX_K];
+            for (int kk = 0; kk < k; kk++) {
+                final_dist[kk] = CUDART_INF;
+                final_idx[kk] = -1;
+            }
+
+            int total = blockDim.x * k;
+            for (int t = 0; t < total; t++) {
+                double dval = dist_buf[t];
+                int jval = idx_buf[t];
+                if (jval < 0) continue;
+
+                int worst = 0;
+                for (int kk = 1; kk < k; kk++) {
+                    if (final_dist[kk] > final_dist[worst]) worst = kk;
+                }
+                if (dval < final_dist[worst]) {
+                    final_dist[worst] = dval;
+                    final_idx[worst] = jval;
                 }
             }
-        }
 
-        // Lane 0 writes out sorted top-K
-        if (lane == 0) {
-            // simple insertion sort (small K)
-            for (int a = 1; a < K; a++) {
-                double key_d = local_dist[a];
-                int key_i = local_idx[a];
+            // insertion sort: sort results ascending (closest first)
+            for (int a = 1; a < k; a++) {
+                double key_dist = final_dist[a];
+                int key_idx = final_idx[a];
                 int b = a - 1;
-                while (b >= 0 && local_dist[b] > key_d) {
-                    local_dist[b + 1] = local_dist[b];
-                    local_idx[b + 1] = local_idx[b];
+                while (b >= 0 && final_dist[b] > key_dist) {
+                    final_dist[b + 1] = final_dist[b];
+                    final_idx[b + 1] = final_idx[b];
                     b--;
                 }
-                local_dist[b + 1] = key_d;
-                local_idx[b + 1] = key_i;
+                final_dist[b + 1] = key_dist;
+                final_idx[b + 1] = key_idx;
             }
-            for (int kk = 0; kk < K; kk++) {
-                knn_idx[(i - start_at) * K + kk] = local_idx[kk];
+
+            // write out
+            for (int kk = 0; kk < k; kk++) {
+                knn_idx[(i - start_at) * k + kk] = final_idx[kk];
             }
         }
     }
@@ -310,33 +319,32 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
-        //int threads = 128;
-        //int blocks = total_threads;   // one block per query point
-        //size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
-        int warps_per_block = 4; // 4 warps = 128 threads
-        dim3 blockDim(warps_per_block * 32);
-        dim3 gridDim((total_threads + warps_per_block - 1) / warps_per_block);
-
+        int threads = 128;
+        int blocks = total_threads;   // one block per query point
+        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
         switch (shape) {
         case 5:
-            knn_warp_kernel<5, MAX_K> << <gridDim, blockDim >> > (
-                num_data, dim_coords, d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+            knn_bruteforce_kernel<5> << <blocks, threads, shmem_size >> > (
+                num_data, dim_coords, num_neighbors,
+                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
                 (int)chol_ip_cross_cov.rows(),
                 range, EPSILON_NUMBERS, dist_funct,
                 d_neighbors, start_at, start_dim
                 );
             break;
         case 15:
-            knn_warp_kernel<15, MAX_K> << <gridDim, blockDim >> > (
-                num_data, dim_coords, d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+            knn_bruteforce_kernel<15> << <blocks, threads, shmem_size >> > (
+                num_data, dim_coords, num_neighbors,
+                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
                 (int)chol_ip_cross_cov.rows(),
                 range, EPSILON_NUMBERS, dist_funct,
                 d_neighbors, start_at, start_dim
                 );
             break;
         case 25:
-            knn_warp_kernel<25, MAX_K> << <gridDim, blockDim >> > (
-                num_data, dim_coords, d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+            knn_bruteforce_kernel<25> << <blocks, threads, shmem_size >> > (
+                num_data, dim_coords, num_neighbors,
+                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
                 (int)chol_ip_cross_cov.rows(),
                 range, EPSILON_NUMBERS, dist_funct,
                 d_neighbors, start_at, start_dim
