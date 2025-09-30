@@ -142,34 +142,31 @@ namespace GPBoost {
         return 0.0;
     }
    
-    // Brute-force kNN kernel -----------------
-    template<int shape>
-    __global__ void knn_bruteforce_kernel(
+    // dist_funct: 1 or 2 as template argument
+    template<int shape, int dist_funct>
+    __global__ void knn_warp_kernel(
         int n, int d, int k,
-        const double* coords,              // [n * d], row-major
-        const double* corr_diag,           // [n]
-        const double* chol_ip_cross_cov,   // [num_ip * n]
-        const double* __restrict__ pars,      // precomputed
+        const double* __restrict__ coords,              // [n*d]
+        const double* __restrict__ corr_diag,           // [n]
+        const double* __restrict__ chol_ip_cross_cov,   // [n*num_ip]
+        const double* __restrict__ pars,
         int num_ip,
-        const double range,
+        double range,
         double EPSILON_NUMBERS,
-        int dist_funct,
-        int* knn_idx,   // [n * k], output
+        int* __restrict__ knn_idx,  // [n*k]
         int start_at,
         int start_dim
     ) {
-        
-        if (k > MAX_K) return;
+        // Warp identification
+        int warps_per_block = blockDim.x / warpSize;
+        int warp_id_in_block = threadIdx.x / warpSize;
+        int lane = threadIdx.x & 31;
 
-        int i = blockIdx.x + start_at;   // one block per query point
+        int global_warp_id = blockIdx.x * warps_per_block + warp_id_in_block;
+        int i = global_warp_id + start_at;
         if (i >= n) return;
-       
-        int tid = threadIdx.x;
 
-        extern __shared__ double shmem[];
-        double* dist_buf = shmem;          // [blockDim.x * k]
-        int* idx_buf = (int*)&dist_buf[blockDim.x * k];
-        // local top-k buffers
+        // Local top-k for this lane
         double local_dist[MAX_K];
         int local_idx[MAX_K];
         for (int kk = 0; kk < k; kk++) {
@@ -177,21 +174,22 @@ namespace GPBoost {
             local_idx[kk] = -1;
         }
 
-        const double* __restrict__ col_i = chol_ip_cross_cov + i * num_ip;
-        const double* __restrict__ coord_i_ptr = coords + i * d;
+        const double* col_i = chol_ip_cross_cov + i * num_ip;
+        const double* coord_i_ptr = coords + i * d;
         double corr_diag_i = corr_diag[i];
-        // each thread checks candidates j < i
-        for (int j = tid; j < i; j += blockDim.x) {
-            // call your distance function with single j
-            const double* __restrict__ col_j = chol_ip_cross_cov + j * num_ip;
-            const double* __restrict__ coord_j_ptr = coords + j * d;
-            
+
+        // Each lane loops over candidates j < i
+        for (int j = lane; j < i; j += warpSize) {
+            const double* col_j = chol_ip_cross_cov + j * num_ip;
+            const double* coord_j_ptr = coords + j * d;
+
             double sum = 0.0;
             for (int dd = start_dim; dd < d; dd++) {
                 double diff = coord_j_ptr[dd] - coord_i_ptr[dd];
                 sum = fma(diff, diff, sum);
             }
-            double inv_r = rsqrt(sum);
+
+            double r = sqrt(sum);
             double range_dist = 0.;
             double var = pars[0];
             double dot = 0.0;
@@ -199,23 +197,24 @@ namespace GPBoost {
             for (int dd = 0; dd < num_ip; dd++) {
                 dot = fma(col_j[dd], col_i[dd], dot);
             }
-            if (dist_funct == 1) {
-                range_dist = range / inv_r;
+
+            if constexpr (dist_funct == 1) {
+                // spatial only
+                range_dist = range * r;
             }
-            else if (dist_funct == 2) {
+            else if constexpr (dist_funct == 2) {
+                // spatio-temporal
                 double dist_time_log = log(fabs(col_j[0] - col_i[0]));
                 double d_aux_time_log = log(pars[1] * exp(dist_time_log * 2 * pars[3]) + 1.);
-                range_dist = pars[2] / (exp(d_aux_time_log * pars[5] * 0.5) * inv_r);
+                range_dist = pars[2] / (exp(d_aux_time_log * pars[5] * 0.5) * (1.0 / r));
                 var = pars[0] / (exp(d_aux_time_log * (pars[6] + pars[5] * (d - 1) * 0.5)));
             }
-            double cov = Cov_GPU_case<shape>(var, range_dist);
 
+            double cov = Cov_GPU_case<shape>(var, range_dist);
             double num = cov - dot;
             double dij = corr_diag_i * corr_diag[j] / (num * num);
-            //double dij = distances_funct_device(corr_diag_i, corr_diag[j], num_ip, d, col_i, col_j, 
-            //    coord_i_ptr, coord_j_ptr, var, shape, range,EPSILON_NUMBERS);
 
-            // insert into local top-k
+            // Insert into local top-k
             int worst = 0;
             for (int kk = 1; kk < k; kk++) {
                 if (local_dist[kk] > local_dist[worst]) worst = kk;
@@ -225,15 +224,9 @@ namespace GPBoost {
                 local_idx[worst] = j;
             }
         }
-        // write local results to shared memory
-        for (int kk = 0; kk < k; kk++) {
-            dist_buf[tid * k + kk] = local_dist[kk];
-            idx_buf[tid * k + kk] = local_idx[kk];
-        }
-        __syncthreads();
 
-        // block reduction: keep only best k
-        if (tid == 0) {
+        // Lane 0 merges results from all lanes
+        if (lane == 0) {
             double final_dist[MAX_K];
             int final_idx[MAX_K];
             for (int kk = 0; kk < k; kk++) {
@@ -241,37 +234,39 @@ namespace GPBoost {
                 final_idx[kk] = -1;
             }
 
-            int total = blockDim.x * k;
-            for (int t = 0; t < total; t++) {
-                double dval = dist_buf[t];
-                int jval = idx_buf[t];
-                if (jval < 0) continue;
+            // Collect results from all lanes via shuffles
+            for (int l = 0; l < warpSize; l++) {
+#pragma unroll
+                for (int kk = 0; kk < k; kk++) {
+                    double dval = __shfl_sync(0xffffffff, local_dist[kk], l);
+                    int jval = __shfl_sync(0xffffffff, local_idx[kk], l);
+                    if (jval < 0) continue;
 
-                int worst = 0;
-                for (int kk = 1; kk < k; kk++) {
-                    if (final_dist[kk] > final_dist[worst]) worst = kk;
-                }
-                if (dval < final_dist[worst]) {
-                    final_dist[worst] = dval;
-                    final_idx[worst] = jval;
+                    int worst = 0;
+                    for (int kk2 = 1; kk2 < k; kk2++) {
+                        if (final_dist[kk2] > final_dist[worst]) worst = kk2;
+                    }
+                    if (dval < final_dist[worst]) {
+                        final_dist[worst] = dval;
+                        final_idx[worst] = jval;
+                    }
                 }
             }
 
-            // insertion sort: sort results ascending (closest first)
+            // Sort ascending (insertion sort)
             for (int a = 1; a < k; a++) {
-                double key_dist = final_dist[a];
-                int key_idx = final_idx[a];
+                double key_d = final_dist[a];
+                int key_i = final_idx[a];
                 int b = a - 1;
-                while (b >= 0 && final_dist[b] > key_dist) {
+                while (b >= 0 && final_dist[b] > key_d) {
                     final_dist[b + 1] = final_dist[b];
                     final_idx[b + 1] = final_idx[b];
                     b--;
                 }
-                final_dist[b + 1] = key_dist;
-                final_idx[b + 1] = key_idx;
+                final_dist[b + 1] = key_d;
+                final_idx[b + 1] = key_i;
             }
 
-            // write out
             for (int kk = 0; kk < k; kk++) {
                 knn_idx[(i - start_at) * k + kk] = final_idx[kk];
             }
@@ -319,36 +314,68 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
         // --- launch kernel ---
-        int threads = 128;
-        int blocks = total_threads;   // one block per query point
-        size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
+        //int threads = 128;
+        //int blocks = total_threads;   // one block per query point
+        //size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
+        int warps_per_block = 4; 
+        dim3 blockDim(warps_per_block * 32);
+        dim3 gridDim((total_threads + warps_per_block - 1) / warps_per_block);
+
         switch (shape) {
         case 5:
-            knn_bruteforce_kernel<5> << <blocks, threads, shmem_size >> > (
-                num_data, dim_coords, num_neighbors,
-                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
-                (int)chol_ip_cross_cov.rows(),
-                range, EPSILON_NUMBERS, dist_funct,
-                d_neighbors, start_at, start_dim
-                );
+            if (dist_funct == 1) {
+                knn_warp_kernel<5, 1> << <gridDim, blockDim >> > (
+                    num_data, dim_coords, num_neighbors,
+                    d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                    (int)chol_ip_cross_cov.rows(),
+                    range, EPSILON_NUMBERS,
+                    d_neighbors, start_at, start_dim
+                    );
+            }
+            else if (dist_funct == 2) {
+                knn_warp_kernel<5, 2> << <gridDim, blockDim >> > (
+                    num_data, dim_coords, num_neighbors,
+                    d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                    (int)chol_ip_cross_cov.rows(),
+                    range, EPSILON_NUMBERS,
+                    d_neighbors, start_at, start_dim);
+            }
             break;
         case 15:
-            knn_bruteforce_kernel<15> << <blocks, threads, shmem_size >> > (
-                num_data, dim_coords, num_neighbors,
-                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
-                (int)chol_ip_cross_cov.rows(),
-                range, EPSILON_NUMBERS, dist_funct,
-                d_neighbors, start_at, start_dim
-                );
+            if (dist_funct == 1) {
+                knn_warp_kernel<15, 1> << <gridDim, blockDim >> > (
+                    num_data, dim_coords, num_neighbors,
+                    d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                    (int)chol_ip_cross_cov.rows(),
+                    range, EPSILON_NUMBERS,
+                    d_neighbors, start_at, start_dim);
+            }
+            else if (dist_funct == 2) {
+                knn_warp_kernel<15, 2> << <gridDim, blockDim >> > (
+                    num_data, dim_coords, num_neighbors,
+                    d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                    (int)chol_ip_cross_cov.rows(),
+                    range, EPSILON_NUMBERS,
+                    d_neighbors, start_at, start_dim);
+            }
             break;
         case 25:
-            knn_bruteforce_kernel<25> << <blocks, threads, shmem_size >> > (
-                num_data, dim_coords, num_neighbors,
-                d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
-                (int)chol_ip_cross_cov.rows(),
-                range, EPSILON_NUMBERS, dist_funct,
-                d_neighbors, start_at, start_dim
-                );
+            if (dist_funct == 1) {
+                knn_warp_kernel<25, 1> << <gridDim, blockDim >> > (
+                    num_data, dim_coords, num_neighbors,
+                    d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                    (int)chol_ip_cross_cov.rows(),
+                    range, EPSILON_NUMBERS,
+                    d_neighbors, start_at, start_dim);
+            }
+            else if (dist_funct == 2) {
+                knn_warp_kernel<25, 2> << <gridDim, blockDim >> > (
+                    num_data, dim_coords, num_neighbors,
+                    d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
+                    (int)chol_ip_cross_cov.rows(),
+                    range, EPSILON_NUMBERS,
+                    d_neighbors, start_at, start_dim);
+            }
             break;
         default:
             fprintf(stderr, "Unsupported shape=%d\n", shape); fflush(stdout);
