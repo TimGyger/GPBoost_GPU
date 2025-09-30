@@ -75,12 +75,19 @@ namespace GPBoost {
         }
     }
 
-    __device__ double Matern_GPU_case(double var, double range_dist, int shape) {
-        switch (shape) {
-        case 5:  return var * exp(-range_dist);
-        case 15: return var * (1. + range_dist) * exp(-range_dist);
-        case 25: return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
-        default: return 0.0;
+    __device__ __forceinline__
+        double Matern_GPU_case(double var, double range_dist, int shape) {
+        if (shape == 5) {
+            return var * exp(-range_dist);
+        }
+        else if (shape == 15) {
+            return var * (1. + range_dist) * exp(-range_dist);
+        }
+        else if (shape == 25) {
+            return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
+        }
+        else {
+            return 0.0;
         }
     }
 
@@ -105,9 +112,7 @@ namespace GPBoost {
             // Step 1: dot product
             double dot = 0.0;
             for (int d = 0; d < num_ip; d++) {
-                double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
-                double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
-                dot = fma(a, b, dot);
+                dot = fma(chol_ip_cross_cov[coords_ind_j * num_ip + d], chol_ip_cross_cov[coord_ind_i * num_ip + d], dot);
             }
             // Step 2: Euclidean distance
             double sum = 0.0;
@@ -116,16 +121,15 @@ namespace GPBoost {
                     coords[coord_ind_i * dim_coords + d];
                 sum = fma(diff, diff, sum);
             }
-            double range_dist = range * sqrt(sum);
-            double cov = Matern_GPU_case(var, range_dist, shape);
+            double cov = Matern_GPU_case(var, range * sqrt(sum), shape);
             //double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
             // Step 3: compute final residual distance
-            double diag_i = corr_diag[coord_ind_i];
-            double diag_j = corr_diag[coords_ind_j];
+            //double diag_i = corr_diag[coord_ind_i];
+            //double diag_j = corr_diag[coords_ind_j];
             //double val = (cov - dot) * rsqrt(diag_i * diag_j);
             //double tmp = 1.0 - fabs(val);
             double num = cov - dot;
-            double tmp = diag_i * diag_j / (num * num);
+            double tmp = corr_diag[coord_ind_i] * corr_diag[coords_ind_j] / (num * num);
             //return (tmp > 0.0) ? sqrt(tmp) : 0.0;
             return tmp;
     }
