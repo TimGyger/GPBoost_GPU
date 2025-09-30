@@ -87,15 +87,14 @@ namespace GPBoost {
 
     // Device function: compute distance
     __device__ double distances_funct_device(
-        double corr_diag_i,            // index i
-        double corr_diag_j,    // indices j
+        int coord_ind_i,            // index i
+        int coords_ind_j,    // indices j
         int num_ip,                      // number of inducing points
         const double* coords,       // [num_data * dim_coords], row-major
         int dim_coords,             // coordinate dimension
-        const double* __restrict__ col_i,      // precomputed
-        const double* __restrict__ col_j,      // precomputed
-        const double* __restrict__ coord_i_ptr,      // precomputed
-        const double* coord_j_ptr,      // precomputed
+        const double* corr_diag,    // [num_data]
+        const double* chol_ip_cross_cov, // [num_ip * num_data] 
+        int dist_funct,             // which distance is used
         const double var,
         const int shape,
         const double range,
@@ -103,36 +102,34 @@ namespace GPBoost {
     ) {
         // Grab reference column for coord_ind_i
         // (assuming chol_ip_cross_cov is column-major: dim_coords x num_data)
-        // Step 1: dot product
-        double dot = 0.0;
-#pragma unroll 8
-        for (int d = 0; d < num_ip; d++) {
-            dot = fma(col_j[d], col_i[d], dot);
-        }
-        //for (int d = 0; d < num_ip; d++) {
-         //   double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
-          //  double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
-           // dot = fma(a, b, dot);
-        //}
-        // Step 2: Euclidean distance
-        double sum = 0.0;
-        for (int d = 0; d < dim_coords; d++) {
-            double diff = coord_j_ptr[d] - coord_i_ptr[d];
-            sum = fma(diff, diff, sum);
-        }
-        double inv_r = rsqrt(sum);
-        double range_dist = range / inv_r;
-        //double range_dist = range * sqrt(sum);
-        double cov = Matern_GPU_case(var, range_dist, shape);
-        //double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
-        // Step 3: compute final residual distance
-        //double diag_i = corr_diag[coord_ind_i];
-        //double diag_j = corr_diag[coords_ind_j];
-        //double val = (cov - dot) * rsqrt(diag_i * diag_j);
-        //double tmp = 1.0 - fabs(val);
-        double num = cov - dot;
-        //return (tmp > 0.0) ? sqrt(tmp) : 0.0;
-        return  corr_diag_i * corr_diag_j / (num * num);
+            // Step 1: dot product
+            double dot = 0.0;
+            for (int d = 0; d < num_ip; d++) {
+                dot = fma(chol_ip_cross_cov[j * num_ip + d],
+                    chol_ip_cross_cov[i * num_ip + d],
+                    dot);
+            }
+            //for (int d = 0; d < num_ip; d++) {
+             //   double a = chol_ip_cross_cov[coords_ind_j * num_ip + d];// col j
+              //  double b = chol_ip_cross_cov[coord_ind_i * num_ip + d]; // col i
+               // dot = fma(a, b, dot);
+            //}
+            // Step 2: Euclidean distance
+            double sum = 0.0;
+            for (int d = 0; d < dim_coords; d++) {
+                double diff = coords[coords_ind_j * dim_coords + d] -
+                    coords[coord_ind_i * dim_coords + d];
+                sum = fma(diff, diff, sum);
+            }
+            double range_dist = range * sqrt(sum);
+            double cov = Matern_GPU_case(var, range_dist, shape);
+            //double cov = Matern_GPU(pars, dist_ij, shape, ard, EPSILON_NUMBERS);
+            // Step 3: compute final residual distance
+            //double val = (cov - dot) * rsqrt(diag_i * diag_j);
+            //double tmp = 1.0 - fabs(val);
+            double num = cov - dot;
+            //return (tmp > 0.0) ? sqrt(tmp) : 0.0;
+            return corr_diag[coord_ind_i] * corr_diag[coords_ind_j] / (num * num);
     }
 
    
@@ -147,6 +144,7 @@ namespace GPBoost {
         const int shape,
         const double range,
         double EPSILON_NUMBERS,
+        int dist_funct,
         int* knn_idx,   // [n * k], output
         int start_at
     ) {
@@ -168,17 +166,14 @@ namespace GPBoost {
             local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
+        extern __shared__ double shmem[];
+        double* col_i = shmem;  // size = num_ip doubles
 
-        const double* col_i = chol_ip_cross_cov + i * num_ip;
-        const double* coord_i_ptr = coords + i * d;
-        double corr_diag_i = corr_diag[i];
         // each thread checks candidates j < i
         for (int j = tid; j < i; j += blockDim.x) {
             // call your distance function with single j
-            const double* col_j = chol_ip_cross_cov + j * num_ip;
-            const double* coord_j_ptr = coords + j * d;
-            double dij = distances_funct_device(corr_diag_i, corr_diag[j], num_ip,coords,d, col_i, col_j, 
-                coord_i_ptr, coord_j_ptr, var, shape, range,EPSILON_NUMBERS);
+            double dij = distances_funct_device(i,j,num_ip,coords,d,corr_diag,chol_ip_cross_cov,dist_funct,
+                var, shape, range,EPSILON_NUMBERS);
 
             // insert into local top-k
             int worst = 0;
@@ -293,6 +288,7 @@ namespace GPBoost {
             shape,
             range,
             EPSILON_NUMBERS,
+            dist_funct,
             d_neighbors,
             start_at
             );
