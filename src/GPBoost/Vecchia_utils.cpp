@@ -374,7 +374,7 @@ namespace GPBoost {
 		if (num_data > num_neighbors) {
 			int first_i = (start_at <= num_neighbors) ? (num_neighbors + 1) : start_at;//The first point (first_i) for which the search is done is the point with index (num_neighbors + 1) or start_at
 			// Brute force kNN search until certain number of data points
-			int brute_force_threshold = std::min(num_data, std::max(1000, num_neighbors));
+			int brute_force_threshold = std::min(num_data, std::max(5000, num_neighbors));
 			if (prediction) {
 				brute_force_threshold = std::min(num_data, std::max(first_i + 500, num_neighbors));
 			}

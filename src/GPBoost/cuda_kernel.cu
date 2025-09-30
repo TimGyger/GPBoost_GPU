@@ -75,33 +75,25 @@ namespace GPBoost {
         }
     }
 
-    __device__ __forceinline__
-        double Matern_GPU_case(double var, double range_dist, int shape) {
-        if (shape == 5) {
-            return var * exp(-range_dist);
-        }
-        else if (shape == 15) {
-            return var * (1. + range_dist) * exp(-range_dist);
-        }
-        else if (shape == 25) {
-            return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
-        }
-        else {
-            return 0.0;
+    __device__ double Matern_GPU_case(double var, double range_dist, int shape) {
+        switch (shape) {
+        case 5:  return var * exp(-range_dist);
+        case 15: return var * (1. + range_dist) * exp(-range_dist);
+        case 25: return var * (1. + range_dist + range_dist * range_dist / 3.) * exp(-range_dist);
+        default: return 0.0;
         }
     }
 
 
     // Device function: compute distance
     __device__ double distances_funct_device(
+        int coord_ind_i,            // index i
+        int coords_ind_j,    // indices j
         int num_ip,                      // number of inducing points
-        const double* coord_i_ptr,
-        const double* coord_j_ptr,
-        const double* chol_ip_cross_cov_i,
-        const double* chol_ip_cross_cov_j,
-        double corr_diag_i,
-        double corr_diag_j,
+        const double* coords,       // [num_data * dim_coords], row-major
         int dim_coords,             // coordinate dimension
+        const double* corr_diag,    // [num_data]
+        const double* chol_ip_cross_cov, // [num_ip * num_data] 
         int dist_funct,             // which distance is used
         const double var,
         const int shape,
@@ -113,12 +105,13 @@ namespace GPBoost {
             // Step 1: dot product
             double dot = 0.0;
             for (int d = 0; d < num_ip; d++) {
-                dot = fma(chol_ip_cross_cov_i[d], chol_ip_cross_cov_j[d], dot);
+                dot = fma(chol_ip_cross_cov[coords_ind_j * num_ip + d], chol_ip_cross_cov[coord_ind_i * num_ip + d], dot);
             }
             // Step 2: Euclidean distance
             double sum = 0.0;
             for (int d = 0; d < dim_coords; d++) {
-                double diff = coord_i_ptr[d] - coord_j_ptr[d];
+                double diff = coords[coords_ind_j * dim_coords + d] -
+                    coords[coord_ind_i * dim_coords + d];
                 sum = fma(diff, diff, sum);
             }
             double cov = Matern_GPU_case(var, range * sqrt(sum), shape);
@@ -129,7 +122,7 @@ namespace GPBoost {
             //double val = (cov - dot) * rsqrt(diag_i * diag_j);
             //double tmp = 1.0 - fabs(val);
             double num = cov - dot;
-            double tmp = corr_diag_i * corr_diag_j / (num * num);
+            double tmp = corr_diag[coord_ind_i] * corr_diag[coords_ind_j] / (num * num);
             //return (tmp > 0.0) ? sqrt(tmp) : 0.0;
             return tmp;
     }
@@ -168,15 +161,10 @@ namespace GPBoost {
             local_dist[kk] = CUDART_INF;
             local_idx[kk] = -1;
         }
-        const double* coord_i_ptr = coords + i * d;
-        const double* chol_ip_cross_cov_i = chol_ip_cross_cov + i * num_ip;
-        double corr_diag_i = corr_diag[i];
         // each thread checks candidates j < i
         for (int j = tid; j < i; j += blockDim.x) {
-            const double* coord_j_ptr = coords + j * d;
-            const double* chol_ip_cross_cov_j = chol_ip_cross_cov + j * num_ip;
             // call your distance function with single j
-            double dij = distances_funct_device(num_ip, coord_i_ptr, coord_j_ptr, chol_ip_cross_cov_i, chol_ip_cross_cov_j, corr_diag_i, corr_diag[j], d,dist_funct,
+            double dij = distances_funct_device(i,j,num_ip,coords,d,corr_diag,chol_ip_cross_cov,dist_funct,
                 var, shape, range,EPSILON_NUMBERS);
 
             // insert into local top-k
@@ -296,24 +284,20 @@ namespace GPBoost {
             d_neighbors,
             start_at
             );
-        printf("kNN1\n"); fflush(stdout);
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
             fprintf(stderr, "kNN kernel launch failed: %s\n", cudaGetErrorString(launchErr)); fflush(stdout);
             return false;
         }
-        printf("kNN2\n"); fflush(stdout);
         cudaError_t execErr = cudaDeviceSynchronize();
         if (execErr != cudaSuccess) {
             fprintf(stderr, "kNN kernel execution failed: %s\n", cudaGetErrorString(execErr)); fflush(stdout);
             return false;
         }
-        printf("kNN21\n"); fflush(stdout);
         // --- copy back results ---
         std::vector<int> h_neighbors(total_threads * num_neighbors);
 
         CUDA_CHECK(cudaMemcpy(h_neighbors.data(), d_neighbors, h_neighbors.size() * sizeof(int), cudaMemcpyDeviceToHost));
-        printf("kNN3\n"); fflush(stdout);
         // --- fill results ---
 #pragma omp parallel for schedule(static)
         for (int i = start_at; i < num_data; i++) {
@@ -321,13 +305,11 @@ namespace GPBoost {
                 neighbors[i][j] = h_neighbors[(i - start_at) * num_neighbors + j];
             }
         }
-        printf("kNN4\n"); fflush(stdout);
         // --- cleanup ---
         cudaFree(d_coords);
         cudaFree(d_corr_diag);
         cudaFree(d_chol_ip_cross_cov);
         cudaFree(d_neighbors);
-        printf("kNN5\n"); fflush(stdout);
         return true;
     }
 
