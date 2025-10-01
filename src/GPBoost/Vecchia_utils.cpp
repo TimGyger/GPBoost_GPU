@@ -1634,18 +1634,18 @@ namespace GPBoost {
 			if ((gp_approx == "full_scale_vecchia" && vecchia_neighbor_selection == "residual_correlation") || vecchia_neighbor_selection == "correlation") {
 				find_nearest_neighbors_Vecchia_FSA_fast(coords_all, num_re_cli + num_re_pred_cli, num_neighbors_pred, chol_ip_cross_cov_obs_pred,
 					re_comps_vecchia, nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, num_re_cli,
-					-1, check_has_duplicates, distances_saved, true, true, (int)num_re_cli);
+					-1, check_has_duplicates, distances_saved, true, true, (int)num_re_cli, GPU_use);
 			}
 			else {
 				if (!scale_coordinates) {
 					find_nearest_neighbors_Vecchia_fast(coords_all, num_re_cli + num_re_pred_cli, num_neighbors_pred,
 						nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, num_re_cli, -1, check_has_duplicates,
-						vecchia_neighbor_selection, rng, distances_saved);
+						vecchia_neighbor_selection, rng, distances_saved, GPU_use);
 				}
 				else {
 					find_nearest_neighbors_Vecchia_fast(coords_scaled, num_re_cli + num_re_pred_cli, num_neighbors_pred,
 						nearest_neighbors_cluster_i, dist_obs_neighbors_cluster_i, dist_between_neighbors_cluster_i, num_re_cli, -1, check_has_duplicates,
-						vecchia_neighbor_selection, rng, distances_saved);
+						vecchia_neighbor_selection, rng, distances_saved, GPU_use);
 				}
 				if (check_has_duplicates) {
 					Log::REFatal("Duplicates found among training and test coordinates. "
