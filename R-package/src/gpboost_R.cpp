@@ -839,7 +839,10 @@ SEXP GPB_CreateREModel_R(SEXP ndata,
 	SEXP likelihood_additional_param,
 	SEXP matrix_inversion_method,
 	SEXP seed,
-	SEXP num_parallel_threads) {
+	SEXP num_parallel_threads,
+	SEXP has_weights,
+	SEXP weights,
+	SEXP likelihood_learning_rate) {
 	SEXP ret;
 	REModelHandle handle = nullptr;
 	int32_t num_data = static_cast<int32_t>(Rf_asInteger(ndata));
@@ -890,6 +893,9 @@ SEXP GPB_CreateREModel_R(SEXP ndata,
 		matrix_inversion_method_ptr,
 		Rf_asInteger(seed),
 		Rf_asInteger(num_parallel_threads),
+		Rf_asLogical(has_weights),
+		R_REAL_PTR(weights),
+		Rf_asReal(likelihood_learning_rate),
 		&handle));
 	R_API_END();
 	ret = PROTECT(R_MakeExternalPtr(handle, R_NilValue, R_NilValue));
@@ -935,7 +941,9 @@ SEXP GPB_SetOptimConfig_R(SEXP handle,
 	SEXP seed_rand_vec_trace,
 	SEXP piv_chol_rank,
 	SEXP init_aux_pars,
-	SEXP estimate_aux_pars) {
+	SEXP estimate_aux_pars,
+	SEXP estimate_cov_par_index,
+	SEXP m_lbfgs) {
 	SEXP optimizer_aux = PROTECT(Rf_asChar(optimizer));
 	SEXP convergence_criterion_aux = PROTECT(Rf_asChar(convergence_criterion));
 	SEXP optimizer_coef_aux = PROTECT(Rf_asChar(optimizer_coef));
@@ -972,7 +980,9 @@ SEXP GPB_SetOptimConfig_R(SEXP handle,
 		Rf_asInteger(seed_rand_vec_trace),
 		Rf_asInteger(piv_chol_rank),
 		R_REAL_PTR(init_aux_pars),
-		Rf_asLogical(estimate_aux_pars)));
+		Rf_asLogical(estimate_aux_pars),
+		R_INT_PTR(estimate_cov_par_index),
+		Rf_asInteger(m_lbfgs)));
 	R_API_END();
 	UNPROTECT(4);
 	return R_NilValue;
@@ -1327,9 +1337,9 @@ static const R_CallMethodDef CallEntries[] = {
   {"LGBM_BoosterSaveModel_R"          , (DL_FUNC)&LGBM_BoosterSaveModel_R          , 4},
   {"LGBM_BoosterSaveModelToString_R"  , (DL_FUNC)&LGBM_BoosterSaveModelToString_R  , 4},
   {"LGBM_BoosterDumpModel_R"          , (DL_FUNC)&LGBM_BoosterDumpModel_R          , 3},
-  {"GPB_CreateREModel_R"              , (DL_FUNC)&GPB_CreateREModel_R              , 28},
+  {"GPB_CreateREModel_R"              , (DL_FUNC)&GPB_CreateREModel_R              , 31},
   {"GPB_REModelFree_R"                , (DL_FUNC)&GPB_REModelFree_R                , 1},
-  {"GPB_SetOptimConfig_R"             , (DL_FUNC)&GPB_SetOptimConfig_R             , 28},
+  {"GPB_SetOptimConfig_R"             , (DL_FUNC)&GPB_SetOptimConfig_R             , 30},
   {"GPB_OptimCovPar_R"                , (DL_FUNC)&GPB_OptimCovPar_R                , 3},
   {"GPB_OptimLinRegrCoefCovPar_R"     , (DL_FUNC)&GPB_OptimLinRegrCoefCovPar_R     , 5},
   {"GPB_EvalNegLogLikelihood_R"       , (DL_FUNC)&GPB_EvalNegLogLikelihood_R       , 5},

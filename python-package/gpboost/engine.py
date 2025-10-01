@@ -35,7 +35,7 @@ def train(params, train_set, num_boost_round=100,
         See https://github.com/fabsig/GPBoost/blob/master/docs/Main_parameters.rst#tuning-parameters--hyperparameters-for-the-tree-boosting-part
     train_set : Dataset
         Data to be trained on.
-    num_boost_round : int, optional (default=1000)
+    num_boost_round : int, optional (default=100)
         Number of boosting iterations.
     gp_model : GPModel or None, optional (default=None)
         GPModel object for the GPBoost algorithm
@@ -389,7 +389,7 @@ def _make_n_folds(full_data, folds, nfold, params, seed, gp_model=None, use_gp_m
         if hasattr(folds, 'split'):
             group_info = full_data.get_group()
             if group_info is not None:
-                group_info = np.array(group_info, dtype=np.int32, copy=False)
+                group_info = np.asarray(full_data.get_group(), dtype=np.int32)
                 flatted_group = np.repeat(range(len(group_info)), repeats=group_info)
             else:
                 flatted_group = np.zeros(num_data, dtype=np.int32)
@@ -401,7 +401,7 @@ def _make_n_folds(full_data, folds, nfold, params, seed, gp_model=None, use_gp_m
             if not SKLEARN_INSTALLED:
                 raise GPBoostError('scikit-learn is required for ranking cv')
             # ranking task, split according to groups
-            group_info = np.array(full_data.get_group(), dtype=np.int32, copy=False)
+            group_info = np.asarray(full_data.get_group(), dtype=np.int32)
             flatted_group = np.repeat(range(len(group_info)), repeats=group_info)
             group_kfold = _GPBoostGroupKFold(n_splits=nfold)
             folds = group_kfold.split(X=np.zeros(num_data), groups=flatted_group)
@@ -419,9 +419,15 @@ def _make_n_folds(full_data, folds, nfold, params, seed, gp_model=None, use_gp_m
             test_id = [randidx[i: i + kstep] for i in range(0, num_data, kstep)]
             train_id = [np.concatenate([test_id[i] for i in range(nfold) if k != i]) for k in range(nfold)]
             folds = zip(train_id, test_id)
-
     ret = CVBooster()
     for train_idx, test_idx in folds:
+        if np.max(train_idx) >= num_data or np.max(test_idx) >= num_data:
+            raise ValueError("Index out of bound. "
+                             "Maximum index in train_idx and test_idx should be less than num_data ({})"
+                             .format(num_data))
+        if np.min(train_idx) < 0 or np.min(test_idx) < 0:
+            raise ValueError("Index out of bound. "
+                             "Minimum index in train_idx and test_idx should be greater than or equal to 0")
         train_set = full_data.subset(sorted(train_idx))
         if full_data.free_raw_data:
             valid_set = full_data.subset(sorted(test_idx))
@@ -446,6 +452,7 @@ def _make_n_folds(full_data, folds, nfold, params, seed, gp_model=None, use_gp_m
             gp_rand_coef_data_pred = None
             cluster_ids = None
             cluster_ids_pred = None
+            weights = None
             if gp_model.group_data is not None:
                 group_data = gp_model.group_data[train_idx]
                 group_data_pred = gp_model.group_data[test_idx]
@@ -461,6 +468,8 @@ def _make_n_folds(full_data, folds, nfold, params, seed, gp_model=None, use_gp_m
             if gp_model.cluster_ids is not None:
                 cluster_ids = gp_model.cluster_ids[train_idx]
                 cluster_ids_pred = gp_model.cluster_ids[test_idx]
+            if gp_model.weights is not None:
+                weights = gp_model.weights[train_idx]
             gp_model_train = GPModel(likelihood=gp_model._get_likelihood_name(),
                                      group_data=group_data,
                                      group_rand_coef_data=group_rand_coef_data,
@@ -472,6 +481,9 @@ def _make_n_folds(full_data, folds, nfold, params, seed, gp_model=None, use_gp_m
                                      cov_fct_shape=gp_model.cov_fct_shape,
                                      gp_approx=gp_model.gp_approx,
                                      num_parallel_threads=gp_model.num_parallel_threads,
+                                     matrix_inversion_method=gp_model.matrix_inversion_method,
+                                     weights=weights,
+                                     likelihood_learning_rate=gp_model.likelihood_learning_rate,
                                      cov_fct_taper_range=gp_model.cov_fct_taper_range,
                                      cov_fct_taper_shape=gp_model.cov_fct_taper_shape,
                                      num_neighbors=gp_model.num_neighbors,
@@ -479,11 +491,11 @@ def _make_n_folds(full_data, folds, nfold, params, seed, gp_model=None, use_gp_m
                                      ind_points_selection=gp_model.ind_points_selection,
                                      num_ind_points=gp_model.num_ind_points,
                                      cover_tree_radius=gp_model.cover_tree_radius,
-                                     matrix_inversion_method=gp_model.matrix_inversion_method,
                                      seed=gp_model.seed,
                                      cluster_ids=cluster_ids,
                                      likelihood_additional_param=gp_model.likelihood_additional_param,
                                      free_raw_data=True)
+            
             if use_gp_model_for_validation:
                 gp_model_train.set_prediction_data(group_data_pred=group_data_pred,
                                                    group_rand_coef_data_pred=group_rand_coef_data_pred,
@@ -558,7 +570,7 @@ def cv(params, train_set, gp_model=None, num_boost_round=1000, early_stopping_ro
     metric : string, list of strings or None, optional (default=None)
         Evaluation metric to be monitored when doing CV and parameter tuning.
         If not None, the metric in ``params`` will be overridden.
-        Non-exhaustive list of supported metrics: "test_neg_log_likelihood", "mse", "rmse", "mae",
+        Non-exhaustive list of supported metrics: "test_neg_log_likelihood", "mse", "rmse", "mae", "crps_gaussian", 
         "auc", "average_precision", "binary_logloss", "binary_error"
         See https://gpboost.readthedocs.io/en/latest/Parameters.html#metric-parameters
         for a complete list of valid metrics.
@@ -891,7 +903,7 @@ def grid_search_tune_parameters(param_grid, train_set, gp_model=None, num_try_ra
     metric : string, list of strings or None, optional (default=None)
         Evaluation metric to be monitored when doing parameter tuning.
         If not None, the metric in ``params`` will be overridden.
-        Non-exhaustive list of supported metrics: "test_neg_log_likelihood", "mse", "rmse", "mae",
+        Non-exhaustive list of supported metrics: "test_neg_log_likelihood", "mse", "rmse", "mae", "crps_gaussian",
         "auc", "average_precision", "binary_logloss", "binary_error"
         See https://gpboost.readthedocs.io/en/latest/Parameters.html#metric-parameters
         for a complete list of valid metrics.
@@ -1037,6 +1049,18 @@ def grid_search_tune_parameters(param_grid, train_set, gp_model=None, num_try_ra
     if metrics is not None:
         raise GPBoostError("The argument 'metrics' is discontinued. "
                            "Use the renamed equivalent argument 'metric' instead")
+    if folds is not None:
+        for train_idx, test_idx in folds:
+            train_set = train_set.construct()
+            num_data = train_set.num_data()
+            if np.max(train_idx) >= num_data or np.max(test_idx) >= num_data:
+                raise ValueError("Index out of bound. "
+                                "Maximum index in train_idx and test_idx should be less than num_data ({})"
+                                .format(num_data))
+            if np.min(train_idx) < 0 or np.min(test_idx) < 0:
+                raise ValueError("Index out of bound. "
+                                "Minimum index in train_idx and test_idx should be greater than or equal to 0")
+
     # Check correct format
     if not isinstance(param_grid, dict):
         raise ValueError("param_grid needs to be a dict")
@@ -1128,9 +1152,8 @@ def grid_search_tune_parameters(param_grid, train_set, gp_model=None, num_try_ra
                 if current_score < best_score:
                     current_score_is_better = True
         except Exception as err: # Note: this is typically not called anymore since gpv.cv() now already contains a tryCatch statement
-            if verbose_eval < 1:
-                print("Error for parameter combination " + str(counter_num_comb) +
-                      " of " + str(len(try_param_combs)) + ": " + str(param_comb))
+            print("Error for parameter combination " + str(counter_num_comb) +
+                    " of " + str(len(try_param_combs)) + ": " + str(param_comb))
         if current_score_is_better:
             best_score = current_score
             best_params = param_comb
@@ -1154,6 +1177,10 @@ def grid_search_tune_parameters(param_grid, train_set, gp_model=None, num_try_ra
                 best_num_boost_round = np.argmin(cvbst[next(iter(cvbst))]) + 1
             all_combinations[param_comb_number] = {'params': param_comb, 'num_boost_round': best_num_boost_round,
                                                    'score': current_score}
+    if best_num_boost_round < 0 or best_score == (1e99 if not higher_better else -1e99):
+        raise ValueError("Did not find any valid parameter combination. " \
+        "Check the 'metric' (is it supported?), search space, and the data provided ")
+        
     if return_all_combinations:
         return {'best_params': best_params, 'best_iter': best_num_boost_round, 'best_score': best_score,
                     'all_combinations': all_combinations}
@@ -1193,7 +1220,7 @@ def tune_pars_TPE_algorithm_optuna(search_space, n_trials, X, y, gp_model = None
     metric : string, list of strings or None, optional (default=None)
         Evaluation metric to be monitored when doing parameter tuning.
         If not None, the metric in ``params`` will be overridden.
-        Non-exhaustive list of supported metrics: "test_neg_log_likelihood", "mse", "rmse", "mae",
+        Non-exhaustive list of supported metrics: "test_neg_log_likelihood", "mse", "rmse", "mae", "crps_gaussian",
         "auc", "average_precision", "binary_logloss", "binary_error"
         See https://gpboost.readthedocs.io/en/latest/Parameters.html#metric-parameters
         for a complete list of valid metrics.
@@ -1312,7 +1339,17 @@ def tune_pars_TPE_algorithm_optuna(search_space, n_trials, X, y, gp_model = None
         raise ValueError("'search_space' must be a dictionary")
     if not isinstance(n_trials, int) or n_trials <= 0:
         raise ValueError("'n_trials' must be a positive integer")
-    
+    if folds is not None:
+        for train_idx, test_idx in folds:
+            num_data = len(y)
+            if np.max(train_idx) >= num_data or np.max(test_idx) >= num_data:
+                raise ValueError("Index out of bound. "
+                                "Maximum index in train_idx and test_idx should be less than num_data ({})"
+                                .format(num_data))
+            if np.min(train_idx) < 0 or np.min(test_idx) < 0:
+                raise ValueError("Index out of bound. "
+                                "Minimum index in train_idx and test_idx should be greater than or equal to 0")
+        
     if params is None:
         params = {}
     else:
@@ -1394,12 +1431,15 @@ def tune_pars_TPE_algorithm_optuna(search_space, n_trials, X, y, gp_model = None
             if found_better_combination:
                 best_score = best_score_trial
                 best_iter = best_iter_trial
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
         return best_score_trial
     
     direction = 'maximize' if metric_higher_better else 'minimize'
     study = optuna.create_study(direction=direction, sampler=optuna.samplers.TPESampler(seed=tpe_seed))
     study.optimize(objective_opt, n_trials=n_trials)
+    if best_iter < 0 or best_score == (1e99 if not metric_higher_better else -1e99):
+         raise ValueError("Did not find any valid parameter combination. " \
+         "Check the 'metric' (is it supported?), search space, and the data provided ")
     return {'best_params': study.best_trial.params, 'best_iter': best_iter, 'best_score': study.best_trial.values}

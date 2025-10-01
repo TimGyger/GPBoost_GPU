@@ -169,7 +169,7 @@ opt_params = gpb.tune_pars_TPE_algorithm_optuna(search_space=search_space, n_tri
                                                 X=X, y=y, gp_model=gp_model,
                                                 max_num_boost_round=1000, early_stopping_rounds=20, 
                                                 nfold=5, metric=metric,
-                                                cv_seed=4, tpe_seed=1)
+                                                cv_seed=4, tpe_seed=1, verbose_eval=1)
 print("Best parameters: " + str(opt_params['best_params']))
 print("Best number of iterations: " + str(opt_params['best_iter']))
 print("Best score: " + str(opt_params['best_score']))
@@ -184,7 +184,7 @@ opt_params = gpb.tune_pars_TPE_algorithm_optuna(search_space=search_space, n_tri
                                                 X=X, y=y, gp_model=gp_model,
                                                 max_num_boost_round=1000, early_stopping_rounds=20, 
                                                 folds=folds, metric=metric,
-                                                cv_seed=4, tpe_seed=1)
+                                                cv_seed=4, tpe_seed=1, verbose_eval=1)
 
 #--------------------Choosing tuning parameters using random grid search----------------
 # Define parameter search grid
@@ -231,7 +231,7 @@ gp_model = gpb.GPModel(group_data=group, likelihood=likelihood)
 data_train = gpb.Dataset(data=X, label=y)
 cvbst = gpb.cv(params=params, train_set=data_train, gp_model=gp_model, 
                num_boost_round=1000, early_stopping_rounds=20,
-               nfold=5, verbose_eval=True, show_stdv=False, seed=1)
+               nfold=5, verbose_eval=True, show_stdv=False, seed=1, metric=metric)
 metric_name = list(cvbst.keys())[0]
 print("Best number of iterations: " + str(np.argmin(cvbst[metric_name]) + 1))
 
@@ -250,17 +250,6 @@ bst = gpb.train(params=params, train_set=data_train, num_boost_round=1000,
                 early_stopping_rounds=20, evals_result=evals_result)
 gpb.plot_metric(evals_result, figsize=(10, 5))# plot validation scores
 plt.show(block=False)
-
-#--------------------Do Newton updates for tree leaves (only for Gaussian data)----------------
-if likelihood == "gaussian":
-    params_newton = params.copy()
-    params_newton['leaves_newton_update'] = True
-    params_newton['learning_rate'] = 0.1
-    evals_result = {}  # record eval results for plotting
-    bst = gpb.train(params=params_newton, train_set=data_train, num_boost_round=1000,
-                    gp_model=gp_model, valid_sets=data_eval, early_stopping_rounds=20,
-                    evals_result=evals_result)
-    gpb.plot_metric(evals_result, figsize=(10, 5))# plot validation scores
 
 #--------------------Model interpretation----------------
 gp_model = gpb.GPModel(group_data=group, likelihood=likelihood)
@@ -352,13 +341,13 @@ nx = 30  # test data: number of grid points on each axis
 coords_test_aux = np.arange(0, 1, 1 / nx)
 coords_test_x1, coords_test_x2 = np.meshgrid(coords_test_aux, coords_test_aux)
 coords_test = np.column_stack((coords_test_x1.flatten(), coords_test_x2.flatten()))
-coords = np.row_stack((coords_train, coords_test))
+coords = np.vstack((coords_train, coords_test))
 ntest = nx * nx
 n = ntrain + ntest
 # Simulate fixed effects
 X_train = np.random.rand(ntrain, 2)
 X_test = np.column_stack((np.linspace(0, 1, ntest), np.zeros(ntest)))
-X = np.row_stack((X_train, X_test))
+X = np.vstack((X_train, X_test))
 f = f1d(X[:, 0])
 # Simulate spatial Gaussian process
 sigma2_1 = 0.25  # marginal variance of GP
@@ -392,6 +381,9 @@ if likelihood in ("bernoulli_probit", "bernoulli_logit"):
 # Define Gaussian process model
 gp_model = gpb.GPModel(gp_coords=coords_train, cov_function="matern", cov_fct_shape=1.5,
                        likelihood=likelihood)
+# GPs become slow for large data sets -> use an approximation such as a Vecchia approximation:
+# gp_model = gpb.GPModel(gp_coords=coords_train, cov_function="matern", cov_fct_shape=1.5,
+#                        likelihood=likelihood, gp_approx="vecchia")
 # Create dataset for gpb.train
 data_train = gpb.Dataset(X_train, y_train)
 bst = gpb.train(params=params, train_set=data_train, gp_model=gp_model,

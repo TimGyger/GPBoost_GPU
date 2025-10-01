@@ -60,6 +60,9 @@ namespace GPBoost {
 		* \param matrix_inversion_method Method which is used for matrix inversion
 		* \param seed Seed used for model creation (e.g., random ordering in Vecchia approximation)
 		* \param num_parallel_threads Number of parallel threads for OMP
+		* \param has_weights True, if sample weights should be used
+		* \param weights Sample weights
+		* \param likelihood_learning_rate Likelihood learning rate for generalized Bayesian inference (only non-Gaussian likelihoods)
 		*/
 		LIGHTGBM_EXPORT REModel(data_size_t num_data,
 			const data_size_t* cluster_ids_data,
@@ -88,7 +91,10 @@ namespace GPBoost {
 			double likelihood_additional_param,
 			const char* matrix_inversion_method,
 			int seed,
-			int num_parallel_threads);
+			int num_parallel_threads,
+			bool has_weights,
+			const double* weights,
+			double likelihood_learning_rate);
 
 		/*! \brief Destructor */
 		LIGHTGBM_EXPORT ~REModel();
@@ -152,6 +158,8 @@ namespace GPBoost {
 		* \param piv_chol_rank Rank of the pivoted cholseky decomposition used as preconditioner of the conjugate gradient algorithm
 		* \param init_aux_pars Initial values for values for aux_pars_ (e.g., shape parameter of gamma likelihood)
 		* \param estimate_aux_pars If true, any additional parameters for non-Gaussian likelihoods are also estimated (e.g., shape parameter of gamma likelihood)
+		* \param estimate_cov_par_index If estimate_cov_par_index[0] >= 0, some covariance parameters might not be estimated, estimate_cov_par_index[i] is then bool and indicates which ones are estimated
+		* \param m_lbfgs Number of corrections to approximate the inverse Hessian matrix for the lbfgs optimizer
 		*/
 		void SetOptimConfig(double* init_cov_pars,
 			double lr,
@@ -179,7 +187,9 @@ namespace GPBoost {
 			int seed_rand_vec_trace,
 			int piv_chol_rank,
 			double* init_aux_pars,
-			bool estimate_aux_pars);
+			bool estimate_aux_pars,
+			const int* estimate_cov_par_index,
+			int m_lbfgs);
 
 		/*!
 		* \brief Reset cov_pars_ (to their initial values).
@@ -222,7 +232,7 @@ namespace GPBoost {
 		* \brief Find constant initial value of ensenmble for boosting (used only for non-Gaussian likelihoods)
 		* \return init_score Initial value for boosting ensemble (=initial score in LightGBM)
 		*/
-		double GetInitialValueBoosting(int num_set_re);
+		double GetInitialValueBoosting(int num_set_fe);
 
 		/*!
 		* \brief Does a line search as, e.g., in Friedman (2001) to find the optimal step length for every boosting update (only used when has_gp_model_ == true)
@@ -399,7 +409,7 @@ namespace GPBoost {
 
 		int GetNumIt() const;
 
-		int GetNumSetsRE() const;
+		int GetNumSetsFixedEffects() const;
 
 		int GetNumData() const;
 
@@ -478,8 +488,8 @@ namespace GPBoost {
 		bool cov_pars_have_been_provided_for_prediction_ = false; //This is true if Predict() has been called once with cov_pars_pred != nullptr (saved in order to determine whether covariance matrix needs to be factorized again or not)
 		vec_t std_dev_cov_pars_;
 		int num_cov_pars_;
-		/*! \brief Number of sets of random effects / GPs for different parameters with REs / GPs. This is larger than 1, e.g., heteroscedastic models */
-		int num_sets_re_ = 1;
+		/*! \brief Number of fixed effects sets (>1 e.g. for heteroscedastic models) */
+		int num_sets_fixed_effects_ = 1;
 		// Linear regression coefficients related variables
 		vec_t coef_;//linear regression coefficients for fixed effects (in case there are any)
 		bool has_covariates_ = false;

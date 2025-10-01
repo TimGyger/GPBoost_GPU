@@ -12,15 +12,6 @@
 #include <GPBoost/type_defs.h>
 #include <GPBoost/utils.h>
 #include <LightGBM/utils/log.h>
-#include <chrono>  // only for debugging
-#include <thread> // only for debugging
-#ifdef USE_CUDA_GP
-#include <cuda_runtime.h>
-#include <cublas_v2.h>
-#include <cusparse.h>
-#include <cusolverDn.h>
-#endif
-
 using LightGBM::Log;
 
 namespace GPBoost {
@@ -559,35 +550,25 @@ namespace GPBoost {
 		den_mat_t& means);
 
 	/*!
-	* \brief Matrix-multiplication A * B = C
+	* \brief Matrix-multiplication A * B = C (dense)
 	* \param A First Matrix
 	* \param B Second Matrix
 	* \param[out] C = A * B
-	* \param GPU_use if false Use CPU 
+	* \param GPU_use if false Use CPU
 	*/
 	void matmul(const den_mat_t& A, const den_mat_t& B, den_mat_t& C, bool GPU_use);
 
-	void spmatmul(const sp_mat_rm_t& A, const sp_mat_rm_t& B, sp_mat_rm_t& C, bool GPU_use);
 	/*!
-	* \brief Matrix-multiplication D * B = C
-	* \param D Diagonal Matrix as Vector
-	* \param B Matrix
-	* \param[out] C = A * B
-	* \param GPU_use if false Use CPU
-	*/
-	void diag_dense_matmul(const vec_t& D, const den_mat_t& B, den_mat_t& C, bool GPU_use);
-
-	/*!
-	* \brief Sparse-Dense-Matrix-multiplication A * B = C
+	* \brief Matrix-multiplication A * B = C (sparse)
 	* \param A First Matrix
 	* \param B Second Matrix
 	* \param[out] C = A * B
 	* \param GPU_use if false Use CPU
 	*/
-	void sparse_dense_matmul(const sp_mat_rm_t& A, const den_mat_t& B, den_mat_t& C, bool GPU_use);
-
+	void spmatmul(const sp_mat_rm_t& A, const sp_mat_rm_t& B, sp_mat_rm_t& C, bool GPU_use);
+	
 	/*!
-	* \brief Linear solve L^{-1} * R = X for given Cholesky factor L 
+	* \brief Linear solve L^{-1} * R = X for given Cholesky factor L
 	* \param chol Cholesky factor L
 	* \param R_host Right-hand side
 	* \param[out] X = L^{-1} * R
@@ -596,311 +577,13 @@ namespace GPBoost {
 	void solve_lower_triangular(const chol_den_mat_t& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use);
 
 	/*!
-	* \brief Solves Sigma^{-1} * R = X for given Cholesky factor L of Sigma
+	* \brief Linear solve A^{-1} * R = X for given Cholesky factor L of A
 	* \param chol Cholesky factor L
 	* \param R_host Right-hand side
-	* \param[out] X = Sigma^{-1} * R
+	* \param[out] X = A^{-1} * R
 	* \param GPU_use if false Use CPU
 	*/
-	//void solve_linear_sys(const chol_den_mat_t& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use);
-
-#ifdef USE_CUDA_GP
-
-	void launch_subtract_prod_from_mat_kernel(
-		const double* M1, const double* M2, double* Sigma,
-		int M1_rows, int M1_cols,
-		int M2_rows, int M2_cols,
-		bool only_triangular);
-
-	void launch_subtract_sparse_kernel(
-		const int* row_ptr, const int* col_idx, double* values,
-		const double* M1, const double* M2,
-		int n, int m, int K, bool only_triangular);
-
-
-	// Host function
-	template <class T_mat, typename std::enable_if <std::is_same<den_mat_t, T_mat>::value>::type* = nullptr >
-	bool try_SubtractProdFromMat_CUDA(T_mat& Sigma,
-		const den_mat_t& M1,
-		const den_mat_t& M2,
-		bool only_triangular)
-	{
-
-		const int n = Sigma.rows();
-		const int m = Sigma.cols();
-		const int k = M1.rows();  // Inner dimension
-		if (n != M1.cols() || m != M2.cols()) {
-			return false;
-		}
-		size_t size_M1 = sizeof(double) * k * n;
-		size_t size_M2 = sizeof(double) * k * m;
-		size_t size_Sigma = sizeof(double) * n * m;
-
-		double* d_M1;
-		double* d_M2;
-		double* d_Sigma;
-
-		cudaMalloc(&d_M1, size_M1);
-		cudaMalloc(&d_M2, size_M2);
-		cudaMalloc(&d_Sigma, size_Sigma);
-
-		cudaMemcpy(d_M1, M1.data(), size_M1, cudaMemcpyHostToDevice);
-		cudaMemcpy(d_M2, M2.data(), size_M2, cudaMemcpyHostToDevice);
-		cudaMemcpy(d_Sigma, Sigma.data(), size_Sigma, cudaMemcpyHostToDevice);
-
-		launch_subtract_prod_from_mat_kernel (
-			d_M1, d_M2, d_Sigma,
-			k, n, k, m,
-			only_triangular
-			);
-
-		cudaMemcpy(Sigma.data(), d_Sigma, size_Sigma, cudaMemcpyDeviceToHost);
-
-		cudaFree(d_M1);
-		cudaFree(d_M2);
-		cudaFree(d_Sigma);
-
-		Log::REInfo("[GPU] Subtract product with cuBLAS.");
-		return true;
-	}
-	template <class T_mat, typename std::enable_if <std::is_same<sp_mat_t, T_mat>::value || std::is_same<sp_mat_rm_t, T_mat>::value>::type* = nullptr>
-	bool try_SubtractProdFromMat_CUDA(T_mat & Sigma,
-			const den_mat_t & M1,
-			const den_mat_t & M2,
-			bool only_triangular)
-	{
-		
-		const int n = Sigma.rows();
-		const int m = Sigma.cols();
-		const int K = M1.rows();
-
-		if (n != M1.cols() || m != M2.cols()) {
-			return false;
-		}
-
-		//Sigma.makeCompressed();
-		const int nnz = Sigma.nonZeros();
-		const int* h_row_ptr = Sigma.outerIndexPtr();
-		const int* h_col_idx = Sigma.innerIndexPtr();
-		const double* h_values = Sigma.valuePtr();
-
-		// Device memory
-		int* d_row_ptr = nullptr, * d_col_idx = nullptr;
-		double* d_values = nullptr, * d_M1 = nullptr, * d_M2 = nullptr;
-
-		cudaMalloc(&d_row_ptr, (n + 1) * sizeof(int));
-		cudaMalloc(&d_col_idx, nnz * sizeof(int));
-		cudaMalloc(&d_values, nnz * sizeof(double));
-		cudaMalloc(&d_M1, K * n * sizeof(double));
-		cudaMalloc(&d_M2, K * m * sizeof(double));
-
-		// Copy data to device
-		cudaMemcpy(d_row_ptr, h_row_ptr, (n + 1) * sizeof(int), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_col_idx, h_col_idx, nnz * sizeof(int), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_values, h_values, nnz * sizeof(double), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_M1, M1.data(), K * m * sizeof(double), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_M2, M2.data(), K * m * sizeof(double), cudaMemcpyHostToDevice);
-		
-		// Kernel launch
-		launch_subtract_sparse_kernel(
-			d_row_ptr, d_col_idx, d_values,
-			d_M1, d_M2, n, m, K, only_triangular
-			);
-		//cudaDeviceSynchronize();
-		// Copy result back
-		cudaMemcpy((void*)h_values, d_values, nnz * sizeof(double), cudaMemcpyDeviceToHost);
-		
-		// Free device memory
-		cudaFree(d_row_ptr);
-		cudaFree(d_col_idx);
-		cudaFree(d_values);
-		cudaFree(d_M1);
-		cudaFree(d_M2);
-
-		// Mirror for full matrix if needed
-		if (!only_triangular) {
-#pragma omp parallel for schedule(static)
-			for (int k = 0; k < Sigma.outerSize(); ++k) {
-				for (typename T_mat::InnerIterator it(Sigma, k); it; ++it) {
-					int i = it.row();
-					int j = it.col();
-					if (i < j) {
-						Sigma.coeffRef(j, i) = Sigma.coeff(i, j);
-					}
-				}
-			}
-		}
-		
-		Log::REInfo("[GPU] Subtracted M1^T * M2 from sparse Sigma.");
-		return true;
-	}
-
-	template <class T_mat>
-	void SubtractProdFromMatrix(T_mat& Sigma, const den_mat_t& M1, const den_mat_t& M2, bool only_triangular, bool GPU_use) {
-		if (!GPU_use) {
-			Log::REInfo("[Fallback] Forced Eigen matrix-multiplication.");
-			SubtractProdFromMat<T_mat>(Sigma, M1, M2, only_triangular);
-			return;
-		}
-		
-		int device_count = 0;
-		cudaError_t err = cudaGetDeviceCount(&device_count);
-		if (err != cudaSuccess || device_count == 0) {
-			Log::REInfo("[Fallback] No CUDA devices found. Using Eigen for subtract Matrix product.");
-			SubtractProdFromMat<T_mat>(Sigma, M1, M2, only_triangular);
-			GPU_use = false;
-			return;
-		}
-		if (!try_SubtractProdFromMat_CUDA(Sigma,M1,M2,only_triangular)) {
-			Log::REInfo("[Fallback] Error in computation on GPU. Using Eigen for subtract Matrix product.");
-			SubtractProdFromMat<T_mat>(Sigma, M1, M2, only_triangular);
-		}
-	}
-
-	template <class T_chol, typename std::enable_if <std::is_same<chol_den_mat_t, T_chol>::value>::type* = nullptr >
-	bool try_solve_cholesky_gpu(const T_chol& chol, const den_mat_t& R_host, den_mat_t& X_host) {
-		den_mat_t L_host = chol.matrixL();  // L from LL^T
-		int n = L_host.rows();
-		int m = R_host.cols();
-
-		if (L_host.cols() != n || R_host.rows() != n) {
-			return false;
-		}
-		X_host.resize(n, m);
-		// Allocate memory
-		double* d_L = nullptr;
-		double* d_Y = nullptr;
-		double* d_X = nullptr;
-
-		cudaMalloc(&d_L, n * n * sizeof(double));
-		cudaMalloc(&d_Y, n * m * sizeof(double));
-		cudaMalloc(&d_X, n * m * sizeof(double));
-
-		cudaMemcpy(d_L, L_host.data(), n * n * sizeof(double), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_Y, R_host.data(), n * m * sizeof(double), cudaMemcpyHostToDevice);  // Start Y = R
-
-		// Create cuBLAS handle
-		cublasHandle_t handle;
-		cublasCreate(&handle);
-
-		const double alpha = 1.0;
-
-		// Step 1: Solve L * Y = R
-		cublasStatus_t stat1 = cublasDtrsm(
-			handle,
-			CUBLAS_SIDE_LEFT,
-			CUBLAS_FILL_MODE_LOWER,
-			CUBLAS_OP_N,
-			CUBLAS_DIAG_NON_UNIT,
-			n, m,
-			&alpha,
-			d_L, n,
-			d_Y, n  // In-place
-		);
-
-		if (stat1 != CUBLAS_STATUS_SUCCESS) {
-			cudaFree(d_L); cudaFree(d_Y); cudaFree(d_X);
-			cublasDestroy(handle);
-			return false;
-		}
-
-		// Step 2: Solve L^T * X = Y
-		cudaMemcpy(d_X, d_Y, n * m * sizeof(double), cudaMemcpyDeviceToDevice);  // Copy Y into X
-
-		cublasStatus_t stat2 = cublasDtrsm(
-			handle,
-			CUBLAS_SIDE_LEFT,
-			CUBLAS_FILL_MODE_LOWER,
-			CUBLAS_OP_T,  // Transpose
-			CUBLAS_DIAG_NON_UNIT,
-			n, m,
-			&alpha,
-			d_L, n,
-			d_X, n  // In-place
-		);
-
-		if (stat2 != CUBLAS_STATUS_SUCCESS) {
-			cudaFree(d_L); cudaFree(d_Y); cudaFree(d_X);
-			cublasDestroy(handle);
-			return false;
-		}
-
-		// Copy result back
-		X_host.resize(n, m);
-		cudaMemcpy(X_host.data(), d_X, n * m * sizeof(double), cudaMemcpyDeviceToHost);
-
-		// Cleanup
-		cudaFree(d_L);
-		cudaFree(d_Y);
-		cudaFree(d_X);
-		cublasDestroy(handle);
-
-		Log::REInfo("[GPU] Full Cholesky solve (Sigma^-1 * R) with cuBLAS.");
-		return true;
-	}
-	template <class T_chol, typename std::enable_if <std::is_same<chol_sp_mat_t, T_chol>::value || std::is_same<chol_sp_mat_rm_t, T_chol>::value>::type* = nullptr >
-	bool try_solve_cholesky_gpu(const T_chol & chol, const den_mat_t & R_host, den_mat_t & X_host) {
-#pragma omp parallel for schedule(static)   
-		for (int i = 0; i < R_host.cols(); ++i) {
-			X_host.col(i) = chol.solve(R_host.col(i));
-		}
-		return true;
-	}
-
-
-	template <class T_chol>
-	void solve_linear_sys(const T_chol& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use) {
-		if (!GPU_use) {
-			Log::REInfo("[Fallback] Forced Eigen matrix-multiplication.");
-			X_host = chol.solve(R_host);
-			return;
-		}
-		int device_count = 0;
-		cudaError_t err = cudaGetDeviceCount(&device_count);
-		if (err != cudaSuccess || device_count == 0) {
-			Log::REInfo("[Fallback] No CUDA devices found. Using Eigen for matrix-multiplication.");
-			X_host = chol.solve(R_host);
-			GPU_use = false;
-			return;
-		}
-
-		if (!try_solve_cholesky_gpu(chol, R_host, X_host)) {
-			Log::REInfo("[Fallback] Error in computation on GPU. Using Eigen for matrix-multiplication.");
-			X_host = chol.solve(R_host);
-		}
-	}
-
-#else
-
-template <class T_chol>
-void solve_linear_sys(const T_chol& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use) {
-	if (GPU_use) {
-		Log::REInfo("[Fallback] Not able to compile CUDA Code. Continuing with CPU support.");
-		GPU_use = false;
-	}
-	X_host = chol.solve(R_host);
-}
-
-template <class T_mat>
-void SubtractProdFromMatrix(T_mat& Sigma, const den_mat_t& M1, const den_mat_t& M2, bool only_triangular, bool GPU_use) {
-	if (GPU_use) {
-		Log::REInfo("[Fallback] Not able to compile CUDA Code. Continuing with CPU support.");
-		GPU_use = false;
-	}
-	SubtractProdFromMat<T_mat>(Sigma, M1, M2, only_triangular);
-}
-
-#endif  // USE_CUDA_GP
-
-
-
-	/*!
-	* \brief Cholesky factor of A_input = LL^T
-	* \param[out] llt Cholesky factor L
-	* \param A_input Matrix
-	* \param GPU_use if false Use CPU
-	*/
-	void cholesky_solver(chol_den_mat_t& llt, const den_mat_t& A_input, bool GPU_use);
+	void solve_linear_sys(const chol_den_mat_t& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use);
 
 }  // namespace GPBoost
 

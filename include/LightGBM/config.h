@@ -93,7 +93,7 @@ namespace LightGBM {
 #pragma region Core Parameters
 
 		// [doc-only]
-		// options = gaussian, bernoulli_probit, binary_logit, poisson, gamma
+		// options = gaussian, bernoulli_probit, binary_logit, poisson, gamma, negative_binomial, t, tobit, mean_scale_regression
 		// alias = likelihood, objective_type, app, application
 		// desc = The distribution of the response variable (=label) conditional on fixed and random effects.
 		// desc = This ``objective`` parameter only needs to be set when doing independent boosting without random effects / Gaussian processes. 
@@ -105,6 +105,7 @@ namespace LightGBM {
 		// descl2 = ``poisson``, Poisson likelihood with a log link function
 		// descl2 = ``gamma``, Gamma likelihood with a log link function
 		// descl2 = ``negative_binomial``, negative binomial likelihood with a log link function
+		// descl2 = ``t``, t distribution for robust regression
 		std::string objective = "gaussian";
 
 		// alias = num_iteration, n_iter, num_tree, num_trees, num_round, num_rounds, num_boost_round, n_estimators
@@ -921,10 +922,11 @@ namespace LightGBM {
 		// desc = Available options:
 		// descl2 = ``""`` (empty string or not specified) means that ``test_neg_log_likelihood`` is used if there is a gp_model or a metric corresponding to the ``objective`` is used if there is no gp_model (the latter is possible only for pre-defined objective functions, otherwise no evaluation metric will be added)
 		// descl2 = ``test_neg_log_likelihood``, (univariate) test negative log-likelihood, adaptive Gauss-Hermite quadrature is used to calculated this for non-Gaussian likelihoods
-		// descl2 = ``l1``, absolute loss, aliases: ``mean_absolute_error``, ``mae``, ``regression_l1``
-		// descl2 = ``l2``, square loss, aliases: ``mean_squared_error``, ``mse``, ``regression_l2``, ``regression``
-		// descl2 = ``rmse``, root square loss, aliases: ``root_mean_squared_error``, ``l2_root``
-		// descl2 = ``quantile``, `Quantile regression <https://en.wikipedia.org/wiki/Quantile_regression>`__
+		// descl2 = ``mse``, mean square error: ``mean_squared_error``, ``l2``, ``regression_l2``, ``regression``
+		// descl2 = ``mae``, mean absolute error, aliases: ``mean_absolute_error``, ``l1``, ``regression_l1``
+		// descl2 = ``rmse``, root mean square error, aliases: ``root_mean_squared_error``, ``l2_root``
+		// descl2 = ``crps_gaussian``, continuous ranked probability score (CRPS) for a gaussian predictive distribution
+		// descl2 = ``quantile``, `quantile regression loss <https://en.wikipedia.org/wiki/Quantile_regression>`__
 		// descl2 = ``mape``, `MAPE loss <https://en.wikipedia.org/wiki/Mean_absolute_percentage_error>`__, aliases: ``mean_absolute_percentage_error``
 		// descl2 = ``huber``, `Huber loss <https://en.wikipedia.org/wiki/Huber_loss>`__
 		// descl2 = ``fair``, `Fair loss <https://www.kaggle.com/c/allstate-claims-severity/discussion/24520>`__
@@ -1224,6 +1226,9 @@ namespace LightGBM {
 		}
 		else if (type == std::string("tobit") || type == std::string("grabit")) {
 			return "tobit";
+		}
+		else if (type == std::string("mean_scale_regression") || type == std::string("gaussian_heteroscedastic")) {
+			return "mean_scale_regression";
 		}
 		else if (type == std::string("regression_l1") || type == std::string("mean_absolute_error")
 			|| type == std::string("l1") || type == std::string("mae")) {

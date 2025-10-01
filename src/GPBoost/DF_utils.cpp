@@ -2,7 +2,7 @@
 * This file is part of GPBoost a C++ library for combining
 *	boosting with Gaussian process and mixed effects models
 *
-* Copyright (c) 2020 Fabio Sigrist. All rights reserved.
+* Copyright (c) 2020 - 2025 Fabio Sigrist. All rights reserved.
 *
 * Licensed under the Apache License Version 2.0. See LICENSE file in the project root for license information.
 */
@@ -11,58 +11,6 @@
 using LightGBM::Log;
 
 namespace GPBoost {
-
-	double normalPDF(double value) {
-		return std::exp(-value * value / 2.) / M_SQRT2PI;
-	}
-
-	double normalLogPDF(double value) {
-		return -value * value / 2. - M_LOGSQRT2PI;
-	}
-
-	double normalCDF(double value) {
-		double x, y, z;
-		x = value * M_SQRT1_2;
-		z = std::fabs(x);
-		if (z < M_SQRT1_2) {
-			y = 0.5 + 0.5 * std::erf(x);
-		}
-		else {
-			y = 0.5 * std::erfc(z);
-			if (x > 0) {
-				y = 1.0 - y;
-			}
-		}
-		return y;
-	}
-
-	// Copyright 1984, 1987, 1988, 1992 by Stephen L. Moshier
-	double normalLogCDF(double value) {
-		double log_LHS,		/* we compute the left hand side of the approx (LHS) in one shot */
-			last_total = 0,		/* variable used to check for convergence */
-			right_hand_side = 1,	/* includes first term from the RHS summation */
-			numerator = 1,		/* numerator for RHS summand */
-			denom_factor = 1,	/* use reciprocal for denominator to avoid division */
-			denom_cons = 1.0 / (value * value);	/* the precomputed division we use to adjust the denominator */
-		long sign = 1, i = 0;
-		if (value > 6) {
-			return -normalCDF(-value);     /* log(1+x) \approx x */
-		}
-		if (value > -20) {
-			return std::log(normalCDF(value));
-		}
-		log_LHS = -0.5 * value * value - std::log(-value) - M_LOGSQRT2PI;
-		while (std::fabs(last_total - right_hand_side) > std::numeric_limits<double>::epsilon()) {
-			i += 1;
-			last_total = right_hand_side;
-			sign = -sign;
-			denom_factor *= denom_cons;
-			numerator *= 2 * i - 1;
-			right_hand_side += sign * numerator * denom_factor;
-
-		}
-		return log_LHS + std::log(right_hand_side);
-	}
 
     double normalQF(double p) {
         CHECK(p > 0.0 && p < 1.0);
@@ -170,6 +118,84 @@ namespace GPBoost {
                     - r * (1.0 / 252.0
                         - r * (1.0 / 240.0
                             - r * (1.0 / 132.0)))));
+
+        return value;
+    }//end digamma
+
+    double trigamma(double x) {
+        double a = 0.0001;
+        double b = 5.0;
+        double b2 = 0.1666666667;
+        double b4 = -0.03333333333;
+        double b6 = 0.02380952381;
+        double b8 = -0.03333333333;
+        double value;
+        double y;
+        double z;
+        CHECK(x > 0);
+        z = x;
+        //
+        //  Use small value approximation if X <= A.
+        //
+        if (x <= a)
+        {
+            value = 1.0 / x / x;
+            return value;
+        }
+        //
+        //  Increase argument to ( X + I ) >= B.
+        //
+        value = 0.0;
+
+        while (z < b)
+        {
+            value = value + 1.0 / z / z;
+            z = z + 1.0;
+        }
+        //
+        //  Apply asymptotic formula if argument is B or greater.
+        //
+        y = 1.0 / z / z;
+
+        value = value + 0.5 *
+            y + (1.0
+                + y * (b2
+                    + y * (b4
+                        + y * (b6
+                            + y * b8)))) / z;
+
+        return value;
+    }//end trigamma
+
+    double tetragamma(double x) {
+        CHECK(x > 0.0);
+        const double tiny = 1e-4;   // tiny-x shortcut
+        const double threshold = 8.0;    // switch to asymptotic series
+        /* tiny-x limit: phi''(x) approx -2/x^3 */
+        if (x <= tiny)
+            return -2.0 / (x * x * x);
+        /* Shift upward until z >= threshold, using
+           phi''(x) = phi''(x+1) - 2/x^3   */
+        double z = x;
+        double value = 0.0;
+        while (z < threshold) {
+            value -= 2.0 / (z * z * z);
+            z += 1.0;
+        }
+        /* Bernoulli based asymptotic series */
+        double z2 = z * z;
+        double z3 = z2 * z;
+        double z4 = z2 * z2;
+        double z6 = z4 * z2;
+        double z8 = z4 * z4;
+        double z10 = z8 * z2;
+
+        value += -1.0 / z2
+            - 1.0 / z3
+            - 0.5 / z4
+            + 1.0 / (6.0 * z6)
+            - 1.0 / (6.0 * z8)
+            + 3.0 / (10.0 * z10);
 
         return value;
     }

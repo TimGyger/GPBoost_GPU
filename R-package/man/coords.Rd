@@ -3,7 +3,7 @@
 \docType{data}
 \name{coords}
 \alias{coords}
-\title{Example data for the GPBoost package}
+\title{Coordinates for example data for the GPBoost package}
 \usage{
 data(GPBoost_data)
 }

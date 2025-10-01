@@ -45,7 +45,10 @@ namespace GPBoost {
 		double likelihood_additional_param,
 		const char* matrix_inversion_method,
 		int seed,
-		int num_parallel_threads) {
+		int num_parallel_threads,
+		bool has_weights,
+		const double* weights,
+		double likelihood_learning_rate) {
 		string_t cov_fct_str = "none";
 		if (cov_fct != nullptr) {
 			cov_fct_str = std::string(cov_fct);
@@ -74,102 +77,36 @@ namespace GPBoost {
 		}
 		if (matrix_format_ == "sp_mat_t") {
 			re_model_sp_ = std::unique_ptr<REModelTemplate<sp_mat_t, chol_sp_mat_t>>(new REModelTemplate<sp_mat_t, chol_sp_mat_t>(
-				num_data,
-				cluster_ids_data,
-				re_group_data,
-				num_re_group,
-				re_group_rand_coef_data,
-				ind_effect_group_rand_coef,
-				num_re_group_rand_coef,
-				drop_intercept_group_rand_effect,
-				num_gp,
-				gp_coords_data,
-				dim_gp_coords,
-				gp_rand_coef_data,
-				num_gp_rand_coef,
-				cov_fct,
-				cov_fct_shape,
-				gp_approx,
-				cov_fct_taper_range,
-				cov_fct_taper_shape,
-				num_neighbors, 
-				vecchia_ordering,
-				num_ind_points,
-				cover_tree_radius,
-				ind_points_selection,
-				likelihood,
-				likelihood_additional_param,
-				matrix_inversion_method,
-				seed,
-				num_parallel_threads));
+				num_data, cluster_ids_data, re_group_data, num_re_group, re_group_rand_coef_data, 
+				ind_effect_group_rand_coef, num_re_group_rand_coef, drop_intercept_group_rand_effect,
+				num_gp, gp_coords_data, dim_gp_coords, gp_rand_coef_data, num_gp_rand_coef, cov_fct, cov_fct_shape, gp_approx,
+				cov_fct_taper_range, cov_fct_taper_shape, num_neighbors, vecchia_ordering, num_ind_points, cover_tree_radius, ind_points_selection,
+				likelihood, likelihood_additional_param, matrix_inversion_method, seed, num_parallel_threads,
+				has_weights, weights, likelihood_learning_rate));
 			num_cov_pars_ = re_model_sp_->num_cov_par_;
-			num_sets_re_ = re_model_sp_->num_sets_re_;
+			num_sets_fixed_effects_ = re_model_sp_->num_sets_fixed_effects_;
 		}
 		else if (matrix_format_ == "sp_mat_rm_t") {
 			re_model_sp_rm_ = std::unique_ptr<REModelTemplate<sp_mat_rm_t, chol_sp_mat_rm_t>>(new REModelTemplate<sp_mat_rm_t, chol_sp_mat_rm_t>(
-				num_data,
-				cluster_ids_data,
-				re_group_data,
-				num_re_group,
-				re_group_rand_coef_data,
-				ind_effect_group_rand_coef,
-				num_re_group_rand_coef,
-				drop_intercept_group_rand_effect,
-				num_gp,
-				gp_coords_data,
-				dim_gp_coords,
-				gp_rand_coef_data,
-				num_gp_rand_coef,
-				cov_fct,
-				cov_fct_shape,
-				gp_approx,
-				cov_fct_taper_range,
-				cov_fct_taper_shape,
-				num_neighbors,
-				vecchia_ordering,
-				num_ind_points,
-				cover_tree_radius,
-				ind_points_selection,
-				likelihood,
-				likelihood_additional_param,
-				matrix_inversion_method,
-				seed,
-				num_parallel_threads));
+				num_data, cluster_ids_data, re_group_data, num_re_group, re_group_rand_coef_data,
+				ind_effect_group_rand_coef, num_re_group_rand_coef, drop_intercept_group_rand_effect,
+				num_gp, gp_coords_data, dim_gp_coords, gp_rand_coef_data, num_gp_rand_coef, cov_fct, cov_fct_shape, gp_approx,
+				cov_fct_taper_range, cov_fct_taper_shape, num_neighbors, vecchia_ordering, num_ind_points, cover_tree_radius, ind_points_selection,
+				likelihood, likelihood_additional_param, matrix_inversion_method, seed, num_parallel_threads,
+				has_weights, weights, likelihood_learning_rate));
 			num_cov_pars_ = re_model_sp_rm_->num_cov_par_;
-			num_sets_re_ = re_model_sp_rm_->num_sets_re_;
+			num_sets_fixed_effects_ = re_model_sp_rm_->num_sets_fixed_effects_;
 		}
 		else {
 			re_model_den_ = std::unique_ptr <REModelTemplate< den_mat_t, chol_den_mat_t>>(new REModelTemplate<den_mat_t, chol_den_mat_t>(
-				num_data,
-				cluster_ids_data,
-				re_group_data,
-				num_re_group,
-				re_group_rand_coef_data,
-				ind_effect_group_rand_coef,
-				num_re_group_rand_coef,
-				drop_intercept_group_rand_effect,
-				num_gp,
-				gp_coords_data,
-				dim_gp_coords,
-				gp_rand_coef_data,
-				num_gp_rand_coef,
-				cov_fct,
-				cov_fct_shape,
-				gp_approx,
-				cov_fct_taper_range,
-				cov_fct_taper_shape,
-				num_neighbors,
-				vecchia_ordering,
-				num_ind_points,
-				cover_tree_radius,
-				ind_points_selection,
-				likelihood,
-				likelihood_additional_param,
-				matrix_inversion_method,
-				seed,
-				num_parallel_threads));
+				num_data, cluster_ids_data, re_group_data, num_re_group, re_group_rand_coef_data,
+				ind_effect_group_rand_coef, num_re_group_rand_coef, drop_intercept_group_rand_effect,
+				num_gp, gp_coords_data, dim_gp_coords, gp_rand_coef_data, num_gp_rand_coef, cov_fct, cov_fct_shape, gp_approx,
+				cov_fct_taper_range, cov_fct_taper_shape, num_neighbors, vecchia_ordering, num_ind_points, cover_tree_radius, ind_points_selection,
+				likelihood, likelihood_additional_param, matrix_inversion_method, seed, num_parallel_threads,
+				has_weights, weights, likelihood_learning_rate));
 			num_cov_pars_ = re_model_den_->num_cov_par_;
-			num_sets_re_ = re_model_den_->num_sets_re_;
+			num_sets_fixed_effects_ = re_model_den_->num_sets_fixed_effects_;
 		}
 	}
 
@@ -283,7 +220,9 @@ namespace GPBoost {
 		int seed_rand_vec_trace,
 		int piv_chol_rank,
 		double* init_aux_pars,
-		bool estimate_aux_pars) {
+		bool estimate_aux_pars,
+		const int* estimate_cov_par_index,
+		int m_lbfgs) {
 		// Initial covariance parameters
 		if (init_cov_pars != nullptr) {
 			vec_t init_cov_pars_orig = Eigen::Map<const vec_t>(init_cov_pars, num_cov_pars_);
@@ -304,7 +243,7 @@ namespace GPBoost {
 		}
 		// Initial linear regression coefficients
 		if (init_coef != nullptr) {
-			coef_ = Eigen::Map<const vec_t>(init_coef, num_sets_re_ * num_covariates);
+			coef_ = Eigen::Map<const vec_t>(init_coef, num_sets_fixed_effects_ * num_covariates);
 			init_coef_given_ = true;
 			coef_given_or_estimated_ = true;
 		}
@@ -332,19 +271,19 @@ namespace GPBoost {
 			re_model_sp_->SetOptimConfig(lr, acc_rate_cov, max_iter, delta_rel_conv, use_nesterov_acc, nesterov_schedule_version,
 				optimizer, momentum_offset, convergence_criterion, lr_coef, acc_rate_coef, optimizer_coef,
 				cg_max_num_it, cg_max_num_it_tridiag, cg_delta_conv, num_rand_vec_trace, reuse_rand_vec_trace,
-				cg_preconditioner_type, seed_rand_vec_trace, piv_chol_rank, estimate_aux_pars);
+				cg_preconditioner_type, seed_rand_vec_trace, piv_chol_rank, estimate_aux_pars, estimate_cov_par_index, m_lbfgs);
 		}
 		else if (matrix_format_ == "sp_mat_rm_t") {
 			re_model_sp_rm_->SetOptimConfig(lr, acc_rate_cov, max_iter, delta_rel_conv, use_nesterov_acc, nesterov_schedule_version,
 				optimizer, momentum_offset, convergence_criterion, lr_coef, acc_rate_coef, optimizer_coef,
 				cg_max_num_it, cg_max_num_it_tridiag, cg_delta_conv, num_rand_vec_trace, reuse_rand_vec_trace,
-				cg_preconditioner_type, seed_rand_vec_trace, piv_chol_rank, estimate_aux_pars);
+				cg_preconditioner_type, seed_rand_vec_trace, piv_chol_rank, estimate_aux_pars, estimate_cov_par_index, m_lbfgs);
 		}
 		else {
 			re_model_den_->SetOptimConfig(lr, acc_rate_cov, max_iter, delta_rel_conv, use_nesterov_acc, nesterov_schedule_version,
 				optimizer, momentum_offset, convergence_criterion, lr_coef, acc_rate_coef, optimizer_coef,
 				cg_max_num_it, cg_max_num_it_tridiag, cg_delta_conv, num_rand_vec_trace, reuse_rand_vec_trace,
-				cg_preconditioner_type, seed_rand_vec_trace, piv_chol_rank, estimate_aux_pars);
+				cg_preconditioner_type, seed_rand_vec_trace, piv_chol_rank, estimate_aux_pars, estimate_cov_par_index, m_lbfgs);
 		}
 	}
 
@@ -443,14 +382,14 @@ namespace GPBoost {
 		}
 		else {
 			coef_ptr = nullptr;
-			coef_ = vec_t(num_sets_re_ * num_covariates);
+			coef_ = vec_t(num_sets_fixed_effects_ * num_covariates);
 		}
 		double* std_dev_cov_par;
 		double* std_dev_coef;
 		if (calc_std_dev_) {
 			std_dev_cov_pars_ = vec_t(num_cov_pars_);
 			std_dev_cov_par = std_dev_cov_pars_.data();
-			std_dev_coef_ = vec_t(num_sets_re_ * num_covariates);
+			std_dev_coef_ = vec_t(num_sets_fixed_effects_ * num_covariates);
 			std_dev_coef = std_dev_coef_.data();
 		}
 		else {
@@ -524,8 +463,8 @@ namespace GPBoost {
 		CHECK(cov_pars_initialized_);
 		vec_t covariate_data(GetNumData());
 		covariate_data.setOnes();
-		init_score_boosting_ = std::vector<double>(num_sets_re_);
-		for (int igp = 0; igp < num_sets_re_; ++igp) {
+		init_score_boosting_ = std::vector<double>(num_sets_fixed_effects_);
+		for (int igp = 0; igp < num_sets_fixed_effects_; ++igp) {
 			init_score_boosting_[igp] = 0.;
 		}
 		if (matrix_format_ == "sp_mat_t") {
@@ -587,9 +526,9 @@ namespace GPBoost {
 		}
 	}//end FindInitialValueBoosting
 
-	double REModel::GetInitialValueBoosting(int num_set_re) {
-		CHECK(num_set_re <= num_sets_re_);
-		return(init_score_boosting_[num_set_re]);
+	double REModel::GetInitialValueBoosting(int num_set_fe) {
+		CHECK(num_set_fe <= num_sets_fixed_effects_);
+		return(init_score_boosting_[num_set_fe]);
 	}
 
 	void REModel::LineSearchLearningRate(const double* score,
@@ -1096,8 +1035,8 @@ namespace GPBoost {
 		return(num_it_);
 	}
 
-	int REModel::GetNumSetsRE() const {
-		return(num_sets_re_);
+	int REModel::GetNumSetsFixedEffects() const {
+		return(num_sets_fixed_effects_);
 	}
 
 	int REModel::GetNumData() const {

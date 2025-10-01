@@ -9,12 +9,13 @@ GPModel(likelihood = "gaussian", group_data = NULL,
   drop_intercept_group_rand_effect = NULL, gp_coords = NULL,
   gp_rand_coef_data = NULL, cov_function = "matern", cov_fct_shape = 1.5,
   gp_approx = "none", num_parallel_threads = NULL,
-  cov_fct_taper_range = 1, cov_fct_taper_shape = 1, num_neighbors = 20L,
+  matrix_inversion_method = "default", weights = NULL,
+  likelihood_learning_rate = 1, cov_fct_taper_range = 1,
+  cov_fct_taper_shape = 1, num_neighbors = NULL,
   vecchia_ordering = "random", ind_points_selection = "kmeans++",
-  num_ind_points = 500L, cover_tree_radius = 1,
-  matrix_inversion_method = "cholesky", seed = 0L, cluster_ids = NULL,
-  likelihood_additional_param = NULL, free_raw_data = FALSE,
-  vecchia_approx = NULL, vecchia_pred_type = NULL,
+  num_ind_points = NULL, cover_tree_radius = 1, seed = 0L,
+  cluster_ids = NULL, likelihood_additional_param = NULL,
+  free_raw_data = FALSE, vecchia_approx = NULL, vecchia_pred_type = NULL,
   num_neighbors_pred = NULL)
 }
 \arguments{
@@ -22,17 +23,32 @@ GPModel(likelihood = "gaussian", group_data = NULL,
 Available options:
 \itemize{
 \item{ "gaussian" }
-\item{ "bernoulli_probit": binary data with Bernoulli likelihood and a probit link function }
-\item{ "bernoulli_logit": binary data with Bernoulli likelihood and a logit link function }
-\item{ "gamma": gamma distribution with a with log link function }
-\item{ "poisson": Poisson distribution with a with log link function }
-\item{ "negative_binomial": negative binomial distribution with a with log link function }
+\item{ "bernoulli_logit": Bernoulli likelihood with a logit link function for binary classification. Aliases: "binary", "binary_logit" }
+\item{ "bernoulli_probit": Bernoulli likelihood with a probit link function for binary classification. Aliases: "binary_probit" }
+\item{ "binomial_logit": Binomial likelihood with a logit link function. 
+The response variable \code{y} needs to contain proportions of successes / trials, 
+and the \code{weights} parameter needs to contain the numbers of trials. Aliases: "binomial"}
+\item{ "binomial_probit": Binomial likelihood with a probit link function. 
+The response variable \code{y} needs to contain proportions of successes / trials, 
+and the \code{weights} parameter needs to contain the numbers of trials }
+\item{ "beta_binomial": Beta-binomial likelihood with a logit link function. 
+The response variable \code{y} needs to contain proportions of successes / trials, 
+and the \code{weights} parameter needs to contain the numbers of trials. Aliases: "betabinomial", "beta-binomial"}
+\item{ "poisson": Poisson likelihood with a log link function }
+\item{ "negative_binomial": negative binomial likelihood with a log link function (aka "nbinom2", "negative_binomial_2"). 
+The variance is mu * (mu + r) / r, mu = mean, r = shape, with this parametrization }
+\item{ "negative_binomial_1": Negative binomial 1 (aka "nbinom1") likelihood with a log link function. 
+The variance is mu * (1 + phi), mu = mean, phi = dispersion, with this parametrization }
+\item{ "gamma": Gamma likelihood with a log link function }
+\item{ "lognormal": Log-normal likelihood with a log link function }
+\item{ "beta" : Beta likelihood with a logit link function (parametrization of Ferrari and Cribari-Neto, 2004)}
 \item{ "t": t-distribution (e.g., for robust regression) }
 \item{ "t_fix_df": t-distribution with the degrees-of-freedom (df) held fixed and not estimated. 
 The df can be set via the \code{likelihood_additional_param} parameter }
 \item{ "gaussian_heteroscedastic": Gaussian likelihood where both the mean and the variance 
 are related to fixed and random effects. This is currently only implemented for GPs with a 'vecchia' approximation }
-\item{ Note: other likelihoods could be implemented upon request }
+\item{ Note: the first lines in the \url{https://github.com/fabsig/GPBoost/blob/master/include/GPBoost/likelihoods.h}{likelihoods source file} contain additional comments on the specific parametrizations used }
+\item{ Note: other likelihoods can be implemented upon request }
 }}
 
 \item{group_data}{A \code{vector} or \code{matrix} whose columns are categorical grouping variables. 
@@ -43,7 +59,7 @@ The number of columns corresponds to the number of grouped (intercept) random ef
 \item{group_rand_coef_data}{A \code{vector} or \code{matrix} with numeric covariate data 
 for grouped random coefficients}
 
-\item{ind_effect_group_rand_coef}{A \code{vector} with integer indices that 
+\item{ind_effect_group_rand_coef}{A \code{vector} with \code{integer} indices that 
 indicate the corresponding categorical grouping variable (=columns) in 'group_data' for 
 every covariate in 'group_rand_coef_data'. Counting starts at 1.
 The length of this index vector must equal the number of covariates in 'group_rand_coef_data'.
@@ -73,13 +89,14 @@ Note that the first column in \code{gp_coords} must correspond to the time dimen
 \item{ "matern_ard": anisotropic Matern covariance function with Automatic Relevance Determination (ARD), 
 i.e., with a different range parameter for every coordinate dimension / column of \code{gp_coords} }
 \item{ "matern_ard_estimate_shape": same as "matern_ard" but the smoothness parameter is also estimated }
-\item{"exponential": Exponential covariance function (using the parametrization of Diggle and Ribeiro, 2007) }
-\item{"gaussian": Gaussian, aka squared exponential, covariance function (using the parametrization of Diggle and Ribeiro, 2007) }
+\item{ "exponential": Exponential covariance function (using the parametrization of Diggle and Ribeiro, 2007) }
+\item{ "gaussian": Gaussian, aka squared exponential, covariance function (using the parametrization of Diggle and Ribeiro, 2007) }
 \item{ "gaussian_ard": anisotropic Gaussian, aka squared exponential, covariance function with Automatic Relevance Determination (ARD), 
 i.e., with a different range parameter for every coordinate dimension / column of \code{gp_coords} }
-\item{"powered_exponential": powered exponential covariance function with the exponent specified by 
+\item{ "powered_exponential": powered exponential covariance function with the exponent specified by 
 the \code{cov_fct_shape} parameter (using the parametrization of Diggle and Ribeiro, 2007) }
 \item{ "wendland": Compactly supported Wendland covariance function (using the parametrization of Bevilacqua et al., 2019, AOS) }
+\item{ "linear": linear covariance function. This corresponds to a Bayesian linear regression model with a Gaussian prior on the coefficients with a constant variance diagonal prior covariance, and the prior variance is estimated using empirical Bayes. }
 }}
 
 \item{cov_fct_shape}{A \code{numeric} specifying the shape parameter of the covariance function 
@@ -90,12 +107,14 @@ This parameter is irrelevant for some covariance functions such as the exponenti
 for Gaussian processes. Available options: 
 \itemize{
 \item{"none": No approximation }
-\item{"vecchia": A Vecchia approximation; see Sigrist (2022, JMLR) for more details }
+\item{"vecchia": Vecchia approximation; see Sigrist (2022, JMLR) for more details }
+\item{"full_scale_vecchia": Vecchia-inducing points full-scale (VIF) approximation; 
+see Gyger, Furrer, and Sigrist (2025) for more details }
 \item{"tapering": The covariance function is multiplied by 
 a compactly supported Wendland correlation function }
 \item{"fitc": Fully Independent Training Conditional approximation aka 
 modified predictive process approximation; see Gyger, Furrer, and Sigrist (2024) for more details }
-\item{"full_scale_tapering": A full scale approximation combining an 
+\item{"full_scale_tapering": Full-scale approximation combining an 
 inducing point / predictive process approximation with tapering on the residual process; 
 see Gyger, Furrer, and Sigrist (2024) for more details }
 \item{"vecchia_latent": similar as "vecchia" but a Vecchia approximation is applied to the latent Gaussian process 
@@ -104,6 +123,27 @@ for likelihood == "gaussian". For likelihood != "gaussian", "vecchia" and "vecch
 
 \item{num_parallel_threads}{An \code{integer} specifying the number of parallel threads for OMP. 
 If num_parallel_threads = NULL, all available threads are used}
+
+\item{matrix_inversion_method}{A \code{string} specifying the method used for inverting covariance matrices. 
+Available options:
+\itemize{
+\item{"default": iterative methods where possible, otherwise Cholesky factorization }
+\item{"cholesky": Cholesky factorization }
+\item{"iterative": iterative methods. A combination of the conjugate gradient, the Lanczos algorithm, and other methods. 
+
+This is currently only supported for the following cases: 
+\itemize{
+\item{ grouped random effects with more than one level }
+\item{likelihood != "gaussian" and gp_approx == "vecchia" (non-Gaussian likelihoods with a Vecchia-Laplace approximation) }
+\item{likelihood != "gaussian" and gp_approx == "full_scale_vecchia" (non-Gaussian likelihoods with a VIF approximation) }
+\item{likelihood == "gaussian" and gp_approx == "full_scale_tapering" (Gaussian likelihood with a full-scale tapering approximation) }
+}
+}
+}}
+
+\item{weights}{A \code{vector} with sample weights}
+
+\item{likelihood_learning_rate}{A \code{numeric} with a learning rate for the likelihood for generalized Bayesian inference (only non-Gaussian likelihoods)}
 
 \item{cov_fct_taper_range}{A \code{numeric} specifying the range parameter 
 of the Wendland covariance function and Wendland correlation taper function. 
@@ -114,7 +154,12 @@ of the Wendland covariance function and Wendland correlation taper function.
 We follow the notation of Bevilacqua et al. (2019, AOS)}
 
 \item{num_neighbors}{An \code{integer} specifying the number of neighbors for 
-the Vecchia approximation. Note: for prediction, the number of neighbors can 
+the Vecchia and VIF approximations. Internal default values if NULL: 
+\itemize{
+   \item{ 20 for gp_approx = "vecchia" }
+   \item{ 30 for gp_approx = "full_scale_vecchia" }
+   }
+Note: for prediction, the number of neighbors can 
 be set through the 'num_neighbors_pred' parameter in the 'set_prediction_data'
 function. By default, num_neighbors_pred = 2 * num_neighbors. Further, 
 the type of Vecchia approximation used for making predictions is set through  
@@ -139,24 +184,14 @@ Available options:
 }}
 
 \item{num_ind_points}{An \code{integer} specifying the number of inducing 
-points / knots for, e.g., a predictive process approximation}
+points / knots for FITC, full_scale_tapering, and VIF approximations. Internal default values if NULL: 
+\itemize{
+   \item{ 500 for gp_approx = "FITC" and gp_approx = "full_scale_tapering" }
+   \item{ 200 for gp_approx = "full_scale_vecchia" }
+   }}
 
 \item{cover_tree_radius}{A \code{numeric} specifying the radius (= "spatial resolution") 
 for the cover tree algorithm}
-
-\item{matrix_inversion_method}{A \code{string} specifying the method used for inverting covariance matrices. 
-Available options:
-\itemize{
-\item{"cholesky": Cholesky factorization }
-\item{"iterative": iterative methods. A combination of conjugate gradient, Lanczos algorithm, and other methods. 
-
-This is currently only supported for the following cases: 
-\itemize{
-\item{likelihood != "gaussian" and gp_approx == "vecchia" (non-Gaussian likelihoods with a Vecchia-Laplace approximation) }
-\item{likelihood == "gaussian" and gp_approx == "full_scale_tapering" (Gaussian likelihood with a full-scale tapering approximation) }
-}
-}
-}}
 
 \item{seed}{An \code{integer} specifying the seed used for model creation 
 (e.g., random ordering in Vecchia approximation)}

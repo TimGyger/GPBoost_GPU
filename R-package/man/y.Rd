@@ -3,7 +3,7 @@
 \docType{data}
 \name{y}
 \alias{y}
-\title{Example data for the GPBoost package}
+\title{Response variable data for example data for the GPBoost package}
 \usage{
 data(GPBoost_data)
 }

@@ -11,9 +11,42 @@
 
 \item{params}{A \code{list} with parameters for the estimation / optimization
  \itemize{
+    \item{trace: \code{boolean} (default = FALSE). 
+    If TRUE, information on the progress of the parameter
+    optimization is printed}
+    \item{std_dev: \code{boolean} (default = TRUE). 
+    If TRUE, approximate standard deviations are calculated for the covariance and linear regression parameters 
+    (= square root of diagonal of the inverse Fisher information for Gaussian likelihoods and 
+    square root of diagonal of a numerically approximated inverse Hessian for non-Gaussian likelihoods) }
+    \item{init_cov_pars: \code{vector} with \code{numeric} elements (default = NULL). 
+    Initial values for covariance parameters of Gaussian process and 
+    random effects (can be NULL). The order is same as the order 
+    of the parameters in the summary function: first is the error variance 
+    (only for "gaussian" likelihood), next follow the variances of the 
+    grouped random effects (if there are any, in the order provided in 'group_data'), 
+    and then follow the marginal variance and the ranges of the Gaussian process. 
+    If there are multiple Gaussian processes, then the variances and ranges follow alternatingly.
+    If 'init_cov_pars = NULL', an internal choice is used that depends on the 
+    likelihood and the random effects type and covariance function. 
+    If you select the option 'trace = TRUE' in the 'params' argument, 
+    you will see the first initial covariance parameters in iteration 0. }
+    \item{init_coef: \code{vector} with \code{numeric} elements (default = NULL). 
+    Initial values for the regression coefficients (if there are any, can be NULL) }
+    \item{init_aux_pars: \code{vector} with \code{numeric} elements (default = NULL). 
+    Initial values for additional parameters for non-Gaussian likelihoods 
+    (e.g., shape parameter of a gamma or negative_binomial likelihood) }
+    \item{estimate_cov_par_index: \code{vector} with \code{integer} (default = -1). 
+    This allows for disabling the estimation of some (or all) covariance parameters if estimate_cov_par_index != -1. 
+    'estimate_cov_par_index' should then be a vector with length equal to the number of covariance parameters, 
+    and estimate_cov_par_index[i] should be of bool type indicating whether parameter number i is estimated or not. 
+    For instance, estimate_cov_par_index = c(1,1,0) means that the first two covariance parameters 
+    are estimated and the last one not.}  
+    \item{estimate_aux_pars: \code{boolean} (default = TRUE). 
+    If TRUE, additional parameters for non-Gaussian likelihoods 
+    are also estimated (e.g., shape parameter of a gamma or negative_binomial likelihood) }
     \item{optimizer_cov: \code{string} (default = "lbfgs"). 
     Optimizer used for estimating covariance parameters. 
-    Options: "gradient_descent", "lbfgs", "fisher_scoring", "newton", "nelder_mead".
+    Options: "lbfgs", "gradient_descent", "fisher_scoring", "newton", "nelder_mead".
     If there are additional auxiliary parameters for non-Gaussian likelihoods, 
     'optimizer_cov' is also used for those }
     \item{optimizer_coef: \code{string} (default = "wls" for Gaussian likelihoods and "lbfgs" for other likelihoods). 
@@ -30,55 +63,6 @@
     Convergence tolerance. The algorithm stops if the relative change 
     in either the (approximate) log-likelihood or the parameters is below this value. 
     If < 0, internal default values are used }
-    \item{convergence_criterion: \code{string} (default = "relative_change_in_log_likelihood"). 
-    The convergence criterion used for terminating the optimization algorithm.
-    Options: "relative_change_in_log_likelihood" or "relative_change_in_parameters" }
-    \item{init_coef: \code{vector} with \code{numeric} elements (default = NULL). 
-    Initial values for the regression coefficients (if there are any, can be NULL) }
-    \item{init_cov_pars: \code{vector} with \code{numeric} elements (default = NULL). 
-    Initial values for covariance parameters of Gaussian process and 
-    random effects (can be NULL). The order it the same as the order 
-    of the parameters in the summary function: first is the error variance 
-    (only for "gaussian" likelihood), next follow the variances of the 
-    grouped random effects (if there are any, in the order provided in 'group_data'), 
-    and then follow the marginal variance and the range of the Gaussian process. 
-    If there are multiple Gaussian processes, then the variances and ranges follow alternatingly.
-    If 'init_cov_pars = NULL', an internal choice is used that depends on the 
-    likelihood and the random effects type and covariance function. 
-    If you select the option 'trace = TRUE' in the 'params' argument, 
-    you will see the first initial covariance parameters in iteration 0. }
-    \item{lr_coef: \code{numeric} (default = 0.1). 
-    Learning rate for fixed effect regression coefficients if gradient descent is used }
-    \item{lr_cov: \code{numeric} (default = 0.1 for "gradient_descent" and 1. otherwise). 
-    Initial learning rate for covariance parameters if a gradient-based optimization method is used 
-    \itemize{
-    \item{If lr_cov < 0, internal default values are used (0.1 for "gradient_descent" and 1. otherwise) }
-    \item{If there are additional auxiliary parameters for non-Gaussian likelihoods, 
-    'lr_cov' is also used for those }
-    \item{For "lbfgs", this is divided by the norm of the gradient in the first iteration }}}
-    \item{use_nesterov_acc: \code{boolean} (default = TRUE). 
-    If TRUE Nesterov acceleration is used.
-    This is used only for gradient descent }
-    \item{acc_rate_coef: \code{numeric} (default = 0.5). 
-    Acceleration rate for regression coefficients (if there are any) 
-    for Nesterov acceleration }
-    \item{acc_rate_cov: \code{numeric} (default = 0.5). 
-    Acceleration rate for covariance parameters for Nesterov acceleration }
-    \item{momentum_offset: \code{integer} (Default = 2)}. 
-    Number of iterations for which no momentum is applied in the beginning.
-    \item{trace: \code{boolean} (default = FALSE). 
-    If TRUE, information on the progress of the parameter
-    optimization is printed}
-    \item{std_dev: \code{boolean} (default = TRUE). 
-    If TRUE, approximate standard deviations are calculated for the covariance and linear regression parameters 
-    (= square root of diagonal of the inverse Fisher information for Gaussian likelihoods and 
-    square root of diagonal of a numerically approximated inverse Hessian for non-Gaussian likelihoods) }
-    \item{init_aux_pars: \code{vector} with \code{numeric} elements (default = NULL). 
-    Initial values for additional parameters for non-Gaussian likelihoods 
-    (e.g., shape parameter of a gamma or negative_binomial likelihood) }
-    \item{estimate_aux_pars: \code{boolean} (default = TRUE). 
-    If TRUE, additional parameters for non-Gaussian likelihoods 
-    are also estimated (e.g., shape parameter of a gamma or negative_binomial likelihood) }
     \item{cg_max_num_it: \code{integer} (default = 1000). 
     Maximal number of iterations for conjugate gradient algorithms }
     \item{cg_max_num_it_tridiag: \code{integer} (default = 1000). 
@@ -96,22 +80,29 @@
     Otherwise they are sampled every time a trace is calculated }
     \item{seed_rand_vec_trace: \code{integer} (default = 1). 
     Seed number to generate random vectors (e.g., Rademacher) }
-    \item{piv_chol_rank: \code{integer} (default = 50). 
-    Rank of the pivoted Cholesky decomposition used as 
-    preconditioner in conjugate gradient algorithms }
-    \item{cg_preconditioner_type: \code{string}.
+    \item{cg_preconditioner_type (\code{string}):
     Type of preconditioner used for conjugate gradient algorithms.
     \itemize{
+      \item Options for grouped random effects: 
+      \itemize{
+          \item "ssor" (= default): SSOR preconditioner
+          \item "incomplete_cholesky": zero fill-in incomplete Cholesky factorization
+          }
       \item Options for likelihood != "gaussian" and gp_approx == "vecchia" or
       likelihood == "gaussian" and gp_approx == "vecchia_latent": 
         \itemize{
           \item{"vadu" (= default): (B^T * (D^-1 + W) * B) as preconditioner for inverting (B^T * D^-1 * B + W), 
       where B^T * D^-1 * B approx= Sigma^-1 }
-          \item{"fitc": modified predictive process preconditioner for inverting (B^-1 * D * B^-T + W^-1)}
+          \item{"fitc": FITC / modified predictive process preconditioner for inverting (B^-1 * D * B^-T + W^-1)}
           \item{"pivoted_cholesky": (Lk * Lk^T + W^-1) as preconditioner for inverting (B^-1 * D * B^-T + W^-1), 
       where Lk is a low-rank pivoted Cholesky approximation for Sigma and B^-1 * D * B^-T approx= Sigma }
           \item{"incomplete_cholesky": zero fill-in incomplete (reverse) Cholesky factorization of 
           (B^T * D^-1 * B + W) using the sparsity pattern of B^T * D^-1 * B approx= Sigma^-1 }
+        }
+      \item Options for likelihood != "gaussian" and gp_approx == "full_scale_vecchia": 
+        \itemize{
+          \item{"fitc" ( = default): FITC / modified predictive process preconditioner }
+          \item{"vifdu": VIF with diagonal update preconditioner }
         }
       \item Options for likelihood == "gaussian" and gp_approx == "full_scale_tapering": 
         \itemize{
@@ -120,6 +111,39 @@
       }
     }
     }
+    \item{fitc_piv_chol_preconditioner_rank (\code{integer} ): 
+    Rank of the FITC and pivoted Cholesky decomposition preconditioners for 
+    iterative methods for Vecchia and VIF approximations 
+    (for full_scale_tapering, the same inducing points as in the approximation as used).
+    Internal default values if NULL or < 0: 
+    \itemize{
+          \item{ 200 for the FITC preconditioner }
+          \item{ 50 for the pivoted Cholesky decomposition preconditioner }
+          }
+      }
+    \item{convergence_criterion: \code{string} (default = "relative_change_in_log_likelihood", only relevant for "gradient_descent", "fisher_scoring", and "newton"). 
+    The convergence criterion used for terminating the optimization algorithm.
+    Options: "relative_change_in_log_likelihood" or "relative_change_in_parameters" }
+    \item{lr_cov: \code{numeric} (default = 0.1 for "gradient_descent" and 1. otherwise, only relevant for "gradient_descent", "fisher_scoring", and "newton"). 
+    Initial learning rate for covariance parameters if a gradient-based optimization method is used 
+    \itemize{
+    \item{If lr_cov < 0, internal default values are used (0.1 for "gradient_descent" and 1. otherwise) }
+    \item{If there are additional auxiliary parameters for non-Gaussian likelihoods, 
+    'lr_cov' is also used for those }
+    \item{For "lbfgs", this is divided by the norm of the gradient in the first iteration }}}
+    \item{lr_coef: \code{numeric} (default = 0.1, only relevant for "gradient_descent", "fisher_scoring", and "newton"). 
+    Learning rate for fixed effect regression coefficients if gradient descent is used }
+    \item{use_nesterov_acc: \code{boolean} (default = TRUE, only relevant for "gradient_descent"). 
+    If TRUE Nesterov acceleration is used.
+    This is used only for gradient descent }
+    \item{acc_rate_coef: \code{numeric} (default = 0.5, only relevant for "gradient_descent"). 
+    Acceleration rate for regression coefficients (if there are any) 
+    for Nesterov acceleration }
+    \item{acc_rate_cov: \code{numeric} (default = 0.5, only relevant for "gradient_descent"). 
+    Acceleration rate for covariance parameters for Nesterov acceleration }
+    \item{momentum_offset: \code{integer} (Default = 2, only relevant for "gradient_descent")}. 
+    Number of iterations for which no momentum is applied in the beginning.
+    \item{m_lbfgs: \code{integer} (Default = 6)}. Number of corrections to approximate the inverse Hessian matrix for the "lbfgs" optimizer
 }}
 }
 \value{

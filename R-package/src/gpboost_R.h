@@ -648,6 +648,9 @@ GPBOOST_C_EXPORT SEXP LGBM_BoosterDumpModel_R(
 * \param matrix_inversion_method Method which is used for matrix inversion
 * \param seed Seed used for model creation (e.g., random ordering in Vecchia approximation)
 * \param num_parallel_threads Number of parallel threads for OMP
+* \param has_weights True, if sample weights should be used
+* \param weights Sample weights
+* \param likelihood_learning_rate Likelihood learning rate for generalized Bayesian inference (only non-Gaussian likelihoods)
 * \return REModel handle
 */
 GPBOOST_C_EXPORT SEXP GPB_CreateREModel_R(
@@ -678,7 +681,10 @@ GPBOOST_C_EXPORT SEXP GPB_CreateREModel_R(
 	SEXP likelihood_additional_param,
 	SEXP matrix_inversion_method,
 	SEXP seed,
-	SEXP num_parallel_threads
+	SEXP num_parallel_threads,
+	SEXP has_weights,
+	SEXP weights,
+	SEXP likelihood_learning_rate
 );
 
 /*!
@@ -720,6 +726,8 @@ GPBOOST_C_EXPORT SEXP GPB_REModelFree_R(
 * \param piv_chol_rank Rank of the pivoted cholseky decomposition used as preconditioner of the conjugate gradient algorithm
 * \param init_aux_pars Initial values for values for aux_pars_ (e.g., shape parameter of gamma likelihood)
 * \param estimate_aux_pars If true, any additional parameters for non-Gaussian likelihoods are also estimated (e.g., shape parameter of gamma likelihood)
+* \param estimate_cov_par_index If estimate_cov_par_index[0] >= 0, some covariance parameters might not be estimated, estimate_cov_par_index[i] is then bool and indicates which ones are estimated
+* \param m_lbfgs Number of corrections to approximate the inverse Hessian matrix for the lbfgs optimizer
 * \return 0 when succeed, -1 when failure happens
 */
 GPBOOST_C_EXPORT SEXP GPB_SetOptimConfig_R(
@@ -750,7 +758,9 @@ GPBOOST_C_EXPORT SEXP GPB_SetOptimConfig_R(
 	SEXP seed_rand_vec_trace,
 	SEXP piv_chol_rank,
 	SEXP init_aux_pars,
-	SEXP estimate_aux_pars
+	SEXP estimate_aux_pars,
+	SEXP estimate_cov_par_index,
+	SEXP m_lbfgs
 );
 
 /*!

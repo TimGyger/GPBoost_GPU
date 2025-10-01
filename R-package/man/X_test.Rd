@@ -3,7 +3,7 @@
 \docType{data}
 \name{X_test}
 \alias{X_test}
-\title{Example data for the GPBoost package}
+\title{Test predictor variable data for example data for the GPBoost package}
 \usage{
 data(GPBoost_data)
 }

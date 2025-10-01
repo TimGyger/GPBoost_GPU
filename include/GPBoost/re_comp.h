@@ -869,7 +869,7 @@ namespace GPBoost {
 				}
 			}//end use_Z_for_duplicates
 			else {//not use_Z_for_duplicates (ignore duplicates)
-				//this option is used for, e.g., the Vecchia approximation
+				//this option is used for, e.g., the Vecchia approximation for a Gaussian likelihood
 				coords_ = coords;
 				num_random_effects_ = (data_size_t)coords_.rows();
 			}
@@ -1089,10 +1089,10 @@ namespace GPBoost {
 			return((int)coords_.cols());
 		}
 
-		/*! \brief Dimension of spatial coordinates in for space-time models*/
-		int GetDimSpace() const {
+		/*! \brief Dimension of coordinates */
+		int GetNumData() const {
 			CHECK(coord_saved_);
-			return(cov_function_->GetDimSpace(coords_));
+			return((int)coords_.rows());
 		}
 
 		/*!
@@ -1123,12 +1123,16 @@ namespace GPBoost {
 			return(cov_function_->IsIsotropic());
 		}
 
-		bool IsSpaceTimeModel() const {
-			return(cov_function_->IsSpaceTimeModel());
+		bool UseScaledCoordinates() const {
+			return(cov_function_->UseScaledCoordinates());
 		}
 
-		bool IsARDModel() const {
-			return(cov_function_->IsARDModel());
+		bool RedetermineVecchiaNeighborsInducingPoints() const {
+			return(cov_function_->RedetermineVecchiaNeighborsInducingPoints());
+		}
+
+		bool IsSpaceTimeModel() const {
+			return(cov_function_->IsSpaceTimeModel());
 		}
 
 		/*!
@@ -1154,7 +1158,7 @@ namespace GPBoost {
 		*			Note: this is currently only used when changing the likelihood in the re_model
 		*/
 		void DropZ() override {
-			CHECK(!this->is_rand_coef_);//not intended for random coefficient models
+			CHECK(!this->is_rand_coef_);//not intended for random coefficient models			
 			if (this->has_Z_) {
 				this->random_effects_indices_of_data_ = std::vector<data_size_t>(this->num_data_);
 				for (int k = 0; k < this->Z_.outerSize(); ++k) {
@@ -1164,6 +1168,14 @@ namespace GPBoost {
 				}
 				this->has_Z_ = false;
 				this->Z_.resize(0, 0);
+			}
+			else if (this->random_effects_indices_of_data_.size() == 0) {
+				this->random_effects_indices_of_data_ = std::vector<data_size_t>(this->num_data_);
+				// always add 'random_effects_indices_of_data_' to avoid problems when switching between likelihoods
+#pragma omp parallel for schedule(static)
+				for (data_size_t i = 0; i < this->num_data_; ++i) {
+					this->random_effects_indices_of_data_[i] = i;
+				}
 			}
 		}
 
@@ -1364,7 +1376,7 @@ namespace GPBoost {
 				}
 			}
 			else {//inverse range parameters
-				CHECK(cov_function_->cov_fct_type_ != "wendland");
+				CHECK(cov_function_->num_cov_par_ > 1);
 				T_mat Z_sigma_grad_Zt;
 				if (this->has_Z_) {
 					T_mat sigma_grad;
@@ -1404,6 +1416,7 @@ namespace GPBoost {
 		* \param transf_scale If true, the derivative are calculated on the transformed scale otherwise on the original scale. Default = true
 		* \param nugget_var Nugget effect variance parameter sigma^2 (used only if transf_scale = false to transform back)
 		* \param is_symmmetric Set to true if dist and cov_mat are symmetric
+		* \param calc_grad_index Indicates for which parameters gradients are calculated (>0) and which not (<= 0)
 		*/
 		void CalcSigmaAndSigmaGradVecchia(const T_mat& dist,
 			const den_mat_t& coords,
@@ -1413,23 +1426,29 @@ namespace GPBoost {
 			bool calc_gradient,
 			bool transf_scale,
 			double nugget_var,
-			bool is_symmmetric) const {
+			bool is_symmmetric,
+			const std::vector<int>& calc_grad_index) const {
 			if (this->cov_pars_.size() == 0) { Log::REFatal("Covariance parameters are not specified. Call 'SetCovPars' first."); }
 			(*cov_function_).template CalculateCovMat<T_mat>(dist, coords, coords_pred, this->cov_pars_, cov_mat, is_symmmetric);
 			if (apply_tapering_ && !apply_tapering_manually_) {
 				(*cov_function_).template MultiplyWendlandCorrelationTaper<T_mat>(dist, cov_mat, is_symmmetric);
 			}
 			if (calc_gradient) {
-				//gradient wrt to variance parameter
-				cov_grad[0] = cov_mat;
-				if (!transf_scale) {
-					cov_grad[0] /= this->cov_pars_[0];
+				CHECK((int)calc_grad_index.size() == this->num_cov_par_);
+				if (calc_grad_index[0]) {
+					//gradient wrt to variance parameter
+					cov_grad[0] = cov_mat;
+					if (!transf_scale) {
+						cov_grad[0] /= this->cov_pars_[0];
+					}
 				}
-				if (cov_function_->cov_fct_type_ != "wendland") {
+				if (cov_function_->num_cov_par_ > 1) {
 					//gradient wrt to range parameters
 					for (int ipar = 1; ipar < this->num_cov_par_; ++ipar) {
-						(*cov_function_).template CalculateGradientCovMat<T_mat>(dist, coords, coords_pred, cov_mat, this->cov_pars_,
-							cov_grad[ipar], transf_scale, nugget_var, ipar - 1, is_symmmetric);
+						if (calc_grad_index[ipar]) {
+							(*cov_function_).template CalculateGradientCovMat<T_mat>(dist, coords, coords_pred, cov_mat, this->cov_pars_,
+								cov_grad[ipar], transf_scale, nugget_var, ipar - 1, is_symmmetric);
+						}
 					}
 				}
 			}

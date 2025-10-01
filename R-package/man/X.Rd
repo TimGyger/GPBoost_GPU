@@ -3,7 +3,7 @@
 \docType{data}
 \name{X}
 \alias{X}
-\title{Example data for the GPBoost package}
+\title{Predictor variable data for example data for the GPBoost package}
 \usage{
 data(GPBoost_data)
 }

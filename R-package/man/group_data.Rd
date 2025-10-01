@@ -3,7 +3,7 @@
 \docType{data}
 \name{group_data}
 \alias{group_data}
-\title{Example data for the GPBoost package}
+\title{Gouping data for example data for the GPBoost package}
 \usage{
 data(GPBoost_data)
 }

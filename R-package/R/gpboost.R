@@ -23,7 +23,7 @@
 #' @param metric Evaluation metric to be monitored when doing CV and parameter tuning. 
 #' Can be a \code{character} string or vector of \code{character} strings.
 #' If not NULL, the metric in \code{params} will be overridden.
-#' Non-exhaustive list of supported metrics: "test_neg_log_likelihood", "mse", "rmse", "mae", 
+#' Non-exhaustive list of supported metrics: "test_neg_log_likelihood", "mse", "rmse", "mae", "crps_gaussian",
 #' "auc", "average_precision", "binary_logloss", "binary_error". 
 #' See \href{https://gpboost.readthedocs.io/en/latest/Parameters.html#metric-parameters}{
 #' the "metric" section of the parameter documentation} for a complete list of valid metrics.
@@ -387,7 +387,7 @@ NULL
 NULL
 
 #' @name y
-#' @title Example data for the GPBoost package
+#' @title Response variable data for example data for the GPBoost package
 #' @description Response variable for the example data of the GPBoost package
 #'
 #' @docType data
@@ -396,7 +396,7 @@ NULL
 NULL
 
 #' @name X
-#' @title Example data for the GPBoost package
+#' @title Predictor variable data for example data for the GPBoost package
 #' @description A matrix with covariate data for the example data of the GPBoost package
 #'
 #' @docType data
@@ -405,7 +405,7 @@ NULL
 NULL
 
 #' @name group_data
-#' @title Example data for the GPBoost package
+#' @title Gouping data for example data for the GPBoost package
 #' @description A matrix with categorical grouping variables for the example data of the GPBoost package
 #'
 #' @docType data
@@ -414,7 +414,7 @@ NULL
 NULL
 
 #' @name coords
-#' @title Example data for the GPBoost package
+#' @title Coordinates for example data for the GPBoost package
 #' @description A matrix with spatial coordinates for the example data of the GPBoost package
 #'
 #' @docType data
@@ -423,7 +423,7 @@ NULL
 NULL
 
 #' @name X_test
-#' @title Example data for the GPBoost package
+#' @title Test predictor variable data for example data for the GPBoost package
 #' @description A matrix with covariate information for the predictions for the example data of the GPBoost package
 #'
 #' @docType data
@@ -432,7 +432,7 @@ NULL
 NULL
 
 #' @name group_data_test
-#' @title Example data for the GPBoost package
+#' @title Test grouping data for example data for the GPBoost package
 #' @description A matrix with categorical grouping variables for predictions for the example data of the GPBoost package
 #'
 #' @docType data
@@ -441,7 +441,7 @@ NULL
 NULL
 
 #' @name coords_test
-#' @title Example data for the GPBoost package
+#' @title Test coordinates for example data for the GPBoost package
 #' @description A matrix with spatial coordinates for predictions for the example data of the GPBoost package
 #'
 #' @docType data

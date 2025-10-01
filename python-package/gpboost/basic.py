@@ -3,7 +3,7 @@
 Wrapper for C API of GPBoost.
 
 Original work Copyright (c) 2016 Microsoft Corporation. All rights reserved.
-Modified work Copyright (c) 2020 - 2024 Fabio Sigrist. All rights reserved.
+Modified work Copyright (c) 2020 - 2025 Fabio Sigrist. All rights reserved.
 Licensed under the Apache License Version 2.0 See LICENSE file in the project root for license information.
 """
 import ctypes
@@ -174,11 +174,11 @@ def list_to_1d_numpy(data, dtype=np.float32, name='list'):
         else:
             return data.astype(dtype=dtype, copy=False)
     elif is_1d_list(data):
-        return np.array(data, dtype=dtype, copy=False)
+        return np.asarray(data, dtype=dtype)
     elif isinstance(data, pd_Series):
         if _get_bad_pandas_dtypes([data.dtypes]):
             raise ValueError('Series.dtypes must be int, float or bool')
-        return np.array(data, dtype=dtype, copy=False)  # SparseArray should be supported as well
+        return np.asarray(data, dtype=dtype)  # SparseArray should be supported as well
     else:
         raise TypeError("Wrong type({0}) for {1}.\n"
                         "It should be list, numpy 1-D array or pandas Series".format(type(data).__name__, name))
@@ -480,7 +480,7 @@ def convert_from_sliced_object(data):
 def c_float_array(data):
     """Get pointer of float numpy array / list."""
     if is_1d_list(data):
-        data = np.array(data, copy=False)
+        data = np.asarray(data)
     if is_numpy_1d_array(data):
         data = convert_from_sliced_object(data)
         assert data.flags.c_contiguous
@@ -501,7 +501,7 @@ def c_float_array(data):
 def c_int_array(data):
     """Get pointer of int numpy array / list."""
     if is_1d_list(data):
-        data = np.array(data, copy=False)
+        data = np.asarray(data)
     if is_numpy_1d_array(data):
         data = convert_from_sliced_object(data)
         assert data.flags.c_contiguous
@@ -900,9 +900,9 @@ class _InnerPredictor:
 
         def inner_predict(mat, start_iteration, num_iteration, predict_type, preds=None):
             if mat.dtype == np.float32 or mat.dtype == np.float64:
-                data = np.array(mat.reshape(mat.size), dtype=mat.dtype, copy=False)
+                data = np.asarray(mat.reshape(mat.size), dtype=mat.dtype)
             else:  # change non-float data to float data, need to copy
-                data = np.array(mat.reshape(mat.size), dtype=np.float32)
+                data = np.asarray(mat.reshape(mat.size), dtype=np.float32)
             ptr_data, type_ptr_data, _ = c_float_array(data)
             n_preds = self.__get_num_preds(start_iteration, num_iteration, mat.shape[0], predict_type)
             if preds is None:
@@ -1435,9 +1435,9 @@ class Dataset:
 
         self.handle = ctypes.c_void_p()
         if mat.dtype == np.float32 or mat.dtype == np.float64:
-            data = np.array(mat.reshape(mat.size), dtype=mat.dtype, copy=False)
+            data = np.asarray(mat.reshape(mat.size), dtype=mat.dtype)
         else:  # change non-float data to float data, need to copy
-            data = np.array(mat.reshape(mat.size), dtype=np.float32)
+            data = np.asarray(mat.reshape(mat.size), dtype=np.float32)
 
         ptr_data, type_ptr_data, _ = c_float_array(data)
         _safe_call(_LIB.LGBM_DatasetCreateFromMat(
@@ -1473,7 +1473,7 @@ class Dataset:
             nrow[i] = mat.shape[0]
 
             if mat.dtype == np.float32 or mat.dtype == np.float64:
-                mats[i] = np.array(mat.reshape(mat.size), dtype=mat.dtype, copy=False)
+                mats[i] = np.asarray(mat.reshape(mat.size), dtype=mat.dtype)
             else:  # change non-float data to float data, need to copy
                 mats[i] = np.array(mat.reshape(mat.size), dtype=np.float32)
 
@@ -2353,6 +2353,7 @@ class Booster:
         self.label_loaded_from_file = None
         self.fixed_effect_train_loaded_from_file = None
         self.gp_model_prediction_data_loaded_from_file = False
+        self.is_mean_scale_regression = False
         params = {} if params is None else deepcopy(params)
         if gp_model is not None:
             if not isinstance(gp_model, GPModel):
@@ -2503,6 +2504,8 @@ class Booster:
             raise TypeError('Need at least one training dataset or model file or model string '
                             'to create Booster instance')
         self.params = params
+        if self.params.get("objective", None) == "mean_scale_regression":
+            self.is_mean_scale_regression = True
 
     def __del__(self):
         try:
@@ -3580,7 +3583,7 @@ class Booster:
                         response_var = random_effect_pred['var']
                     response_mean = random_effect_pred['mu'] + fixed_effect
                     fixed_effect = None
-            else:  # non-Gaussian data
+            else:  # non-Gaussian likelihood
                 y = None
                 if not has_raw_data and self.gp_model_prediction_data_loaded_from_file:
                     fixed_effect_train = self.fixed_effect_train_loaded_from_file
@@ -3596,7 +3599,11 @@ class Booster:
                                                  num_iteration=num_iteration, raw_score=True, pred_leaf=False,
                                                  pred_contrib=False, data_has_header=data_has_header,
                                                  is_reshape=False)
+                if self.gp_model.num_sets_fe == 2:
+                    fixed_effect_train = np.concatenate((fixed_effect_train[::2], fixed_effect_train[1::2]))
                 if pred_latent:
+                    if self.gp_model.num_sets_fe == 2:
+                        fixed_effect = fixed_effect[::2] # take only predictions for mean
                     # Note: we don't need to provide the response variable y as this is saved
                     #   in the gp_model ("in C++") for non-Gaussian data. y is only not NULL when
                     #   the model was loaded from a file
@@ -3620,6 +3627,8 @@ class Booster:
                         pred_var_cov = random_effect_pred['var']
                     random_effect_mean = random_effect_pred['mu']
                 else:  # predict response variable (not pred_latent)
+                    if self.gp_model.num_sets_fe == 2:
+                        fixed_effect = np.concatenate((fixed_effect[::2], fixed_effect[1::2])) # fixed effects predictions for mean and variance
                     pred_resp = self.gp_model.predict(group_data_pred=group_data_pred,
                                                       group_rand_coef_data_pred=group_rand_coef_data_pred,
                                                       gp_coords_pred=gp_coords_pred,
@@ -3639,7 +3648,14 @@ class Booster:
                     "random_effect_mean": random_effect_mean,
                     "random_effect_cov": pred_var_cov,
                     "response_mean": response_mean,
-                    "response_var": response_var}
+                    "response_var": response_var} # end GPBoost prediction        
+        elif self.is_mean_scale_regression:
+            preds = predictor.predict(data=data, start_iteration=start_iteration, num_iteration=num_iteration,
+                                     raw_score=pred_latent, pred_leaf=pred_leaf, pred_contrib=pred_contrib,
+                                     data_has_header=data_has_header, is_reshape=is_reshape)
+            pred_mean = preds[:,0]
+            pred_var  = np.exp(preds[:,1])
+            return {"pred_mean": pred_mean, "pred_var": pred_var}
         else:  # no gp_model or pred_contrib or ignore_gp_model
             return predictor.predict(data=data, start_iteration=start_iteration, num_iteration=num_iteration,
                                      raw_score=pred_latent, pred_leaf=pred_leaf, pred_contrib=pred_contrib,
@@ -4033,14 +4049,16 @@ class GPModel(object):
                  cov_fct_shape=1.5,
                  gp_approx="none",
                  num_parallel_threads=None,
+                 matrix_inversion_method="default",
+                 weights=None,
+                 likelihood_learning_rate = 1.,
                  cov_fct_taper_range=1.,
                  cov_fct_taper_shape=1.,
-                 num_neighbors=20,
+                 num_neighbors=None,
                  vecchia_ordering="random",
                  ind_points_selection="kmeans++",
-                 num_ind_points=500,
+                 num_ind_points=None,
                  cover_tree_radius=1.,
-                 matrix_inversion_method="cholesky",
                  seed=0,
                  cluster_ids=None,
                  likelihood_additional_param=None,
@@ -4059,25 +4077,49 @@ class GPModel(object):
 
                     - "gaussian"
 
-                    - "bernoulli_probit":
-
-                        Binary data with a Bernoulli likelihood and a probit link function
-
                     - "bernoulli_logit":
 
-                        Binary data with a Bernoulli likelihood and a logit link function
+                        Bernoulli likelihood with a logit link function for binary classification. Aliases: "binary", "binary_logit"
 
-                    - "gamma":
+                    - "bernoulli_probit":
 
-                        Gamma binomial distribution with a with log link function
+                        Bernoulli likelihood with a probit link function for binary classification. Aliases: "binary_probit "
 
+                    - "binomial_logit":
+
+                        Binomial likelihood with a logit link function. The response variable 'y' needs to contain proportions of successes / trials, and the 'weights' parameter needs to contain the numbers of trials. Aliases: "binomial"
+
+                    - "binomial_probit":
+
+                        Binomial likelihood with a probit link function. The response variable 'y' needs to contain proportions of successes / trials, and the 'weights' parameter needs to contain the numbers of trials
+
+                    - "beta_binomial":
+
+                        Beta-binomial likelihood with a logit link function. The response variable 'y' needs to contain proportions of successes / trials, and the 'weights' parameter needs to contain the numbers of trials. Aliases: "betabinomial", "beta-binomial"
+                    
                     - "poisson":
 
-                        Poisson distribution with a with log link function
+                        Poisson likelihood with a log link function
 
                     - "negative_binomial":
 
-                        Negative binomial distribution with a with log link function
+                        Negative binomial likelihood with a log link function (aka "nbinom2", "negative_binomial_2"). The variance is mu * (mu + r) / r, mu = mean, r = shape, with this parametrization
+
+                    - "negative_binomial_1":
+
+                        Negative binomial 1 (aka "nbinom1") likelihood with a log link function. The variance is mu * (1 + phi), mu = mean, phi = dispersion, with this parametrization
+                    
+                    - "gamma":
+
+                        Gamma likelihood with a log link function
+
+                    - "lognormal":
+                    
+                        Log-normal likelihood with a log link function
+
+                    - "beta":
+
+                        Beta likelihood with a logit link function (parametrization of Ferrari and Cribari-Neto, 2004)
                     
                     - "t":
 
@@ -4091,7 +4133,9 @@ class GPModel(object):
 
                         Gaussian likelihood where both the mean and the variance are related to fixed and random effects. This is currently only implemented for GPs with a 'vecchia' approximation
 
-                    - Note: other likelihoods could be implemented upon request
+                    - Note: the first lines in the `likelihoods source file <https://github.com/fabsig/GPBoost/blob/master/include/GPBoost/likelihoods.h>`__ contain additional comments on the specific parametrizations used
+
+                    - Note: other likelihoods can be implemented upon request
             
             group_data : numpy array or pandas DataFrame with numeric or string data or None, optional (default=None)
                 Either a vector or a matrix whose columns are categorical grouping variables. The elements are group
@@ -4164,6 +4208,12 @@ class GPModel(object):
 
                     Compactly supported Wendland covariance function (using the parametrization of Bevilacqua et al., 2019, AOS)
 
+                - "linear": 
+                
+                    Linear covariance function. This corresponds to a Bayesian linear regression model with a Gaussian prior 
+                    on the coefficients with a constant variance diagonal prior covariance, 
+                    and the prior variance is estimated using empirical Bayes.
+
             cov_fct_shape : float, optional (default=0.)
                 Shape parameter of the covariance function (e.g., smoothness parameter for Matern and Wendland covariance).
                 This parameter is irrelevant for some covariance functions such as the exponential or Gaussian
@@ -4176,8 +4226,12 @@ class GPModel(object):
 
                     - "vecchia":
 
-                        A Vecchia approximation; see Sigrist (2022, JMLR) for more details
+                        Vecchia approximation; see Sigrist (2022, JMLR) for more details
 
+                    - "full_scale_vecchia": 
+                    
+                        Vecchia-inducing points full-scale (VIF) approximation; see Gyger, Furrer, and Sigrist (2025) for more details 
+                    
                     - "tapering":
 
                         The covariance function is multiplied by a compactly supported Wendland correlation function
@@ -4189,7 +4243,7 @@ class GPModel(object):
 
                     - "full_scale_tapering":
 
-                        A full scale approximation combining an inducing point / predictive process approximation with
+                        Full-scale approximation combining an inducing point / predictive process approximation with
                         tapering on the residual process; see Gyger, Furrer, and Sigrist (2024) for more details
 
                     - "vecchia_latent":
@@ -4199,14 +4253,49 @@ class GPModel(object):
 
             num_parallel_threads : integer, optional (default=None)
                 The number of parallel threads for OMP. If num_parallel_threads=None, all available threads are used
+            matrix_inversion_method : string, optional (default="cholesky")
+                Method used for inverting covariance matrices. Available options:
+
+                    - "default":
+
+                        Iterative methods where possible, otherwise Cholesky factorization 
+                    
+                    - "cholesky":
+
+                        Cholesky factorization
+
+                    - "iterative":
+
+                        Iterative methods: A combination of the conjugate gradient, Lanczos algorithm, and other methods.
+
+                        This is currently only supported for the following cases:
+
+                        - grouped random effects with more than one level 
+                        
+                        - likelihood != "gaussian" and gp_approx == "vecchia" (non-Gaussian likelihoods with a Vecchia-Laplace approximation)
+
+                        - likelihood != "gaussian" and gp_approx == "full_scale_vecchia" (non-Gaussian likelihoods with a VIF approximation)
+
+                        - likelihood == "gaussian" and gp_approx == "full_scale_tapering" (Gaussian likelihood with a full-scale tapering approximation)
+
+            weights : list, numpy 1-D array, pandas Series / one-column DataFrame or None, optional (default=None)
+                Sample weights
+            likelihood_learning_rate : float, optional (default=1.)
+                A learning rate for the likelihood for generalized Bayesian inference (only non-Gaussian likelihoods)
             cov_fct_taper_range : float, optional (default=1.)
                 Range parameter of the Wendland covariance function and Wendland correlation taper function.
                 We follow the notation of Bevilacqua et al. (2019, AOS)
             cov_fct_taper_shape : float, optional (default=0.)
                 Shape (=smoothness) parameter of the Wendland covariance function and Wendland correlation taper function.
                 We follow the notation of Bevilacqua et al. (2019, AOS)
-            num_neighbors : integer, optional (default=20)
-                Number of neighbors for the Vecchia approximation. Note: for prediction, the number of neighbors can
+            num_neighbors : integer, optional 
+                Number of neighbors for the Vecchia approximation. Internal default values if None: 
+                
+                    - 20 for gp_approx = "vecchia"
+
+                    - 30 for gp_approx = "full_scale_vecchia"
+                
+                Note: for prediction, the number of neighbors can
                 be set through the 'num_neighbors_pred' parameter in the 'set_prediction_data' function. By default,
                 num_neighbors_pred = 2 * num_neighbors. Further, the type of Vecchia approximation used for making
                 predictions is set through the 'vecchia_pred_type' parameter in the 'set_prediction_data' function
@@ -4240,31 +4329,18 @@ class GPModel(object):
 
                         Random selection from data points
 
-            num_ind_points : integer, optional (default=500)
-                Number of inducing points / knots for, e.g., a predictive process approximation
+            num_ind_points : integer, optional
+                Number of inducing points / knots for FITC, full_scale_tapering, and VIF approximations. Internal default values if None: 
+                
+                    - 500 for gp_approx = "FITC" and gp_approx = "full_scale_tapering" 
+
+                    - 200 for gp_approx = "full_scale_vecchia"
+
             cover_tree_radius : float, optional (default=1.)
                 The radius (= "spatial resolution") for the cover tree algorithm
-            matrix_inversion_method : string, optional (default="cholesky")
-                Method used for inverting covariance matrices. Available options:
-
-                    - "cholesky":
-
-                        Cholesky factorization
-
-                    - "iterative":
-
-                        Iterative methods: A combination of conjugate gradient, Lanczos algorithm, and other methods.
-
-                        This is currently only supported for the following cases:
-
-                        - likelihood != "gaussian" and gp_approx == "vecchia" (non-Gaussian likelihoods with a Vecchia-Laplace approximation)
-
-                        - likelihood == "gaussian" and gp_approx == "full_scale_tapering" (Gaussian likelihood with a full-scale tapering approximation)
-
             seed : integer, optional (default=0)
                 The seed used for model creation (e.g., random ordering in Vecchia approximation)
-            cluster_ids : list, numpy 1-D array, pandas Series / one-column DataFrame with numeric or string data
-            or None, optional (default=None)
+            cluster_ids : list, numpy 1-D array, pandas Series / one-column DataFrame with numeric or string data or None, optional (default=None)
                 The elements indicate independent realizations of  random effects / Gaussian processes
                 (same values = same process realization)
             likelihood_additional_param : float, optional (default=1.)
@@ -4336,7 +4412,7 @@ class GPModel(object):
         self.num_parallel_threads = -1
         self.cov_fct_taper_range = 1.
         self.cov_fct_taper_shape = 1.
-        self.num_neighbors = 20
+        self.num_neighbors = -1
         self.vecchia_ordering = "random"
         self.vecchia_pred_type = None
         self.num_neighbors_pred = -1
@@ -4344,9 +4420,12 @@ class GPModel(object):
         self.nsim_var_pred = -1
         self.rank_pred_approx_matrix_lanczos = -1
         self.ind_points_selection = "kmeans++"
-        self.num_ind_points = 500
+        self.num_ind_points = -1
         self.cover_tree_radius = 1.
-        self.matrix_inversion_method = "cholesky"
+        self.matrix_inversion_method = "default"
+        self.has_weights = False
+        self.weights = None
+        self.likelihood_learning_rate = 1.
         self.seed = 0
         self.cluster_ids = None
         self.cluster_ids_map_to_int = None
@@ -4362,6 +4441,7 @@ class GPModel(object):
         self.coefs_loaded_from_file = None
         self.X_loaded_from_file = None
         self.model_fitted = False
+        self.current_neg_log_likelihood_loaded_from_file = None
         self.params = {"maxit": 1000,
                        "delta_rel_conv": -1,  # default value is set in C++
                        "init_coef": None,
@@ -4381,10 +4461,13 @@ class GPModel(object):
                        "num_rand_vec_trace": 50,
                        "reuse_rand_vec_trace": True,
                        "seed_rand_vec_trace": 1,
-                       "piv_chol_rank": 50,
-                       "estimate_aux_pars": True
+                       "fitc_piv_chol_preconditioner_rank": -1, # default value is set in C++
+                       "estimate_aux_pars": True,
+                       "estimate_cov_par_index": np.array([-1], dtype=np.int32),
+                       "m_lbfgs": -1 # default value is set in C++
                        }
         self.num_sets_re = 1
+        self.num_sets_fe = 1
 
         if (model_file is not None) or (model_dict is not None):
             if model_file is not None:
@@ -4422,20 +4505,30 @@ class GPModel(object):
             likelihood = model_dict.get("likelihood")
             likelihood_additional_param = model_dict.get("likelihood_additional_param")
             matrix_inversion_method = model_dict.get("matrix_inversion_method")
+            if model_dict.get("weights") is not None:
+                weights = np.array(model_dict.get("weights"))
+            likelihood_learning_rate = model_dict.get("likelihood_learning_rate")
             # Set additionally required data
             self.model_has_been_loaded_from_saved_file = True
             if model_dict.get("cov_pars") is not None:
                 self.cov_pars_loaded_from_file = np.array(model_dict.get("cov_pars"))
             if model_dict.get("y") is not None:
                 self.y_loaded_from_file = np.array(model_dict.get("y"))
-            self.num_sets_re = model_dict.get("num_sets_re")
+            if model_dict.get("num_sets_re") is None:
+                self.num_sets_re = 1 # for backwards compatibility
+            else:
+                self.num_sets_re = model_dict.get("num_sets_re")
+            if model_dict.get("num_sets_fe") is None:
+                self.num_sets_fe = 1 # for backwards compatibility
+            else:
+                self.num_sets_fe = model_dict.get("num_sets_fe")
             self.has_covariates = model_dict.get("has_covariates")
             if model_dict.get("has_covariates"):
                 if model_dict.get("coefs") is not None:
                     self.coefs_loaded_from_file = np.array(model_dict.get("coefs"))
                 self.num_covariates = model_dict.get("num_covariates")
                 self.num_coef = model_dict.get("num_coef")
-                if self.num_coef != self.num_covariates * self.num_sets_re:
+                if self.num_coef != self.num_covariates * self.num_sets_fe:
                     raise ValueError("incorrect 'num_coef'")
                 if model_dict.get("X") is not None:
                     self.X_loaded_from_file = np.array(model_dict.get("X"))
@@ -4448,14 +4541,17 @@ class GPModel(object):
                             self.coef_names.append("Covariate_" + str(ii + 1))
                         else:
                             self.coef_names.append(X_names[ii])
-                    if self.num_sets_re == 2:
+                    if self.num_sets_fe == 2:
                         self.coef_names = self.coef_names + [name + "_scale" for name in self.coef_names]
             self.model_fitted = model_dict.get("model_fitted")
+            if self.model_fitted:
+                self.current_neg_log_likelihood_loaded_from_file = model_dict.get("current_neg_log_likelihood")
 
         if group_data is None and gp_coords is None:
             raise ValueError("Both group_data and gp_coords are None. Provide at least one of them")
         if likelihood == "gaussian_heteroscedastic":
             self.num_sets_re = 2
+            self.num_sets_fe = 2
         if likelihood == "gaussian" and gp_approx != "vecchia_latent":
             self.cov_par_names = ["Error_term"]
         else:
@@ -4475,6 +4571,7 @@ class GPModel(object):
         gp_coords_c = ctypes.c_void_p()
         gp_rand_coef_data_c = ctypes.c_void_p()
         cluster_ids_c = ctypes.c_void_p()
+        weights_c = ctypes.c_void_p()
         # Set data for grouped random effects
         if group_data is not None:
             group_data, group_data_names = _format_check_data(data=group_data, get_variable_names=True,
@@ -4586,16 +4683,22 @@ class GPModel(object):
             self.cov_fct_taper_shape = cov_fct_taper_shape
             self.vecchia_approx = vecchia_approx
             self.vecchia_ordering = vecchia_ordering
-            self.num_neighbors = num_neighbors
+            if num_neighbors is not None:
+                if num_neighbors > 0:
+                    self.num_neighbors = num_neighbors
             self.ind_points_selection = ind_points_selection
-            self.num_ind_points = num_ind_points
+            if num_ind_points is not None:
+                if num_ind_points > 0:
+                    self.num_ind_points = num_ind_points
             self.cover_tree_radius = cover_tree_radius
-            if self.cov_function == "matern_space_time" or self.cov_function == "exponential_space_time":
+            if self.cov_function == "space_time_gneiting":
+                self.cov_par_names.extend(["sigma2", "a", "c", "alpha", "nu", "beta", "delta"])
+            elif self.cov_function == "matern_space_time" or self.cov_function == "exponential_space_time":
                 self.cov_par_names.extend(["GP_var", "GP_range_time", "GP_range_space"])
             elif self.cov_function == "matern_ard" or self.cov_function == "gaussian_ard" or \
                     self.cov_function == "exponential_ard":
                 self.cov_par_names.extend(["GP_var"] + ["GP_range_" + str(i+1) for i in range(0,self.dim_coords)])
-            elif self.cov_function == "wendland":
+            elif self.cov_function == "wendland" or self.cov_function == "linear" or self.cov_function == "linear_no_woodbury":
                 self.cov_par_names.extend(["GP_var"])
             elif self.cov_function == "matern_estimate_shape":
                 self.cov_par_names.extend(["GP_var", "GP_range", "GP_smoothness"])
@@ -4617,6 +4720,8 @@ class GPModel(object):
                     raise ValueError("Incorrect number of data points in gp_rand_coef_data")
                 self.num_gp_rand_coef = self.gp_rand_coef_data.shape[1]
                 gp_rand_coef_data_c, _, _ = c_float_array(self.gp_rand_coef_data.flatten(order='F'))
+                if self.cov_function == "space_time_gneiting":
+                    raise ValueError("The 'space_time_gneiting' covariance function does currently not support random coefficients")
                 for ii in range(self.num_gp_rand_coef):
                     if gp_rand_coef_data_names is None:
                         if self.cov_function == "matern_space_time" or self.cov_function == "exponential_space_time":
@@ -4629,7 +4734,7 @@ class GPModel(object):
                             self.cov_par_names.extend(
                                 ["GP_rand_coef_nb_" + str(ii + 1) + "_var"] +
                                  ["GP_rand_coef_nb_" + str(ii + 1) + str(i+1) for i in range(0,self.dim_coords)])
-                        elif self.cov_function == "wendland":
+                        elif self.cov_function == "wendland" or self.cov_function == "linear" or self.cov_function == "linear_no_woodbury":
                             self.cov_par_names.extend(["GP_rand_coef_nb_" + str(ii + 1) + "_var"])
                         elif self.cov_function == "matern_estimate_shape":
                             self.cov_par_names.extend(
@@ -4657,7 +4762,7 @@ class GPModel(object):
                             self.cov_par_names.extend(
                                 ["GP_rand_coef_nb_" + gp_rand_coef_data_names[ii] + "_var"] +
                                  ["GP_rand_coef_nb_" + gp_rand_coef_data_names[ii] + str(i+1) for i in range(0,self.dim_coords)])
-                        elif self.cov_function == "wendland":
+                        elif self.cov_function == "wendland" or self.cov_function == "linear" or self.cov_function == "linear_no_woodbury":
                             self.cov_par_names.extend(["GP_rand_coef_" + gp_rand_coef_data_names[ii] + "_var"])
                         elif self.cov_function == "matern_estimate_shape":
                             self.cov_par_names.extend(
@@ -4683,7 +4788,7 @@ class GPModel(object):
                                                 check_must_be_int=False, convert_to_type=None)
             self.cluster_ids = deepcopy(cluster_ids)
             if self.cluster_ids.shape[0] != self.num_data:
-                raise ValueError("Incorrect number of data points in cluster_ids")
+                raise ValueError("Incorrect number of data points in 'cluster_ids'")
             # Convert cluster_ids to int and save conversion map
             if not np.issubdtype(cluster_ids.dtype, np.integer):
                 create_map = True
@@ -4696,6 +4801,16 @@ class GPModel(object):
                     cluster_ids = np.array([self.cluster_ids_map_to_int[cl_name] for cl_name in cluster_ids])
             cluster_ids = cluster_ids.astype(np.int32)
             cluster_ids_c = cluster_ids.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
+        # Set weights
+        if weights is not None:
+            weights = _format_check_1D_data(weights, data_name="weights", check_data_type=True, 
+                                            check_must_be_int=False, convert_to_type=np.float64)
+            if weights.shape[0] != self.num_data:
+                raise ValueError("Incorrect number of data points in 'weights'")
+            self.weights = deepcopy(weights)
+            self.has_weights = True
+            weights_c = self.weights.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+        self.likelihood_learning_rate = likelihood_learning_rate
 
         self.__determine_num_cov_pars(likelihood=likelihood)
         if self.likelihood_additional_param is None:
@@ -4732,6 +4847,9 @@ class GPModel(object):
             c_str(self.matrix_inversion_method),
             ctypes.c_int(self.seed),
             ctypes.c_int(self.num_parallel_threads),
+            ctypes.c_bool(self.has_weights),
+            weights_c,
+            ctypes.c_double(self.likelihood_learning_rate),
             ctypes.byref(self.handle)))
 
         # Should we free raw data?
@@ -4742,6 +4860,7 @@ class GPModel(object):
             self.gp_coords = None
             self.gp_rand_coef_data = None
             self.cluster_ids = None
+            self.weights = None
 
         if self.model_has_been_loaded_from_saved_file:
             if model_dict["params"]['init_cov_pars'] is not None:
@@ -4751,7 +4870,9 @@ class GPModel(object):
             self.set_optim_params(params=model_dict["params"])
 
     def __determine_num_cov_pars(self, likelihood):
-        if self.cov_function == "matern_space_time" or self.cov_function == "exponential_space_time" or \
+        if self.cov_function == "space_time_gneiting":
+            num_par_per_GP = 7
+        elif self.cov_function == "matern_space_time" or self.cov_function == "exponential_space_time" or \
             self.cov_function == "matern_estimate_shape":
             num_par_per_GP = 3
         elif self.cov_function == "matern_ard" or self.cov_function == "gaussian_ard" or \
@@ -4759,7 +4880,7 @@ class GPModel(object):
             num_par_per_GP = 1 + self.dim_coords
         elif self.cov_function == "matern_ard_estimate_shape":
             num_par_per_GP = 2 + self.dim_coords
-        elif self.cov_function == "wendland":
+        elif self.cov_function == "wendland" or self.cov_function == "linear" or self.cov_function == "linear_no_woodbury":
             num_par_per_GP = 1
         else:
             num_par_per_GP = 2
@@ -4776,6 +4897,8 @@ class GPModel(object):
         if params is not None:
             if not isinstance(params, dict):
                 raise ValueError("params needs to be a dict")
+            if 'piv_chol_rank' in params:
+                raise GPBoostError("The argument 'piv_chol_rank' is discontinued. Use the argument 'fitc_piv_chol_preconditioner_rank' instead ")
             for param in params:
                 if param == "init_cov_pars":
                     if params[param] is not None:
@@ -4792,7 +4915,7 @@ class GPModel(object):
                                                               convert_to_type=np.float64)
                         if self.num_covariates is None or self.num_covariates == 0:
                             self.num_covariates = params["init_coef"].shape[0]
-                            self.num_coef = self.num_covariates * self.num_sets_re
+                            self.num_coef = self.num_covariates * self.num_sets_fe
                         if params["init_coef"].shape[0] != self.num_coef:
                             raise ValueError("params['init_coef'] does not contain the correct number of parameters")
                 if param == "init_aux_pars":
@@ -4804,7 +4927,16 @@ class GPModel(object):
                             raise ValueError("params['init_aux_pars'] does not contain the correct number "
                                              "of parameters")
                 if param in self.params:
-                    self.params[param] = params[param]
+                    if param == "estimate_cov_par_index":
+                        params["estimate_cov_par_index"] = _format_check_1D_data(params["estimate_cov_par_index"],
+                                                                        data_name="estimate_cov_par_index",
+                                                                        check_data_type=True, check_must_be_int=True,
+                                                                        convert_to_type=np.dtype(np.int32))
+                        if params["estimate_cov_par_index"][0] >= 0 and params["estimate_cov_par_index"].shape[0] != self.num_cov_pars:
+                            raise ValueError(f"params['estimate_cov_par_index'] is not equal to the number of covariance parameters ({self.num_cov_pars})")
+                        self.params["estimate_cov_par_index"] = deepcopy(params["estimate_cov_par_index"])                        
+                    else:
+                        self.params[param] = params[param]
                 elif param not in ["optimizer_cov", "optimizer_coef", "cg_preconditioner_type",
                                    "init_cov_pars", "init_aux_pars"]:
                     raise ValueError("Unknown parameter: %s" % param)
@@ -4835,9 +4967,38 @@ class GPModel(object):
         params : dict or None, optional (default=None)
             Parameters for the estimation / optimization
 
+                - trace : bool, optional (default = False)
+                    If True, information on the progress of the parameter optimization is printed.                
+                - std_dev : bool (default=False)
+                    If True, approximate standard deviations are calculated for the covariance parameters
+                    (= square root of diagonal of the inverse Fisher information for Gaussian likelihoods and
+                    square root of diagonal of a numerically approximated inverse Hessian for non-Gaussian likelihoods).
+                - init_cov_pars : numpy array or pandas DataFrame, optional (default = None)
+                    Initial values for covariance parameters of Gaussian process and random effects (can be None).
+                    The order is the same as the order of the parameters in the summary function: first is the error
+                    variance (only for "gaussian" likelihood), next follow the variances of the grouped random effects
+                    (if there are any, in the order provided in 'group_data'), and then follow the marginal variance
+                    and the range of the Gaussian process. If there are multiple Gaussian processes, then the variances
+                    and ranges follow alternatingly. If 'init_cov_pars = None', an internatl choice is used that depends
+                    on the likelihood and the random effects type and covariance function. If you select the option
+                    'trace = True' in the 'params' argument, you will see the first initial covariance parameters
+                    in iteration 0.
+                - init_coef : numpy array or pandas DataFrame, optional (default = None)
+                    Initial values for the regression coefficients (if there are any, can be None)
+                - init_aux_pars : numpy array or pandas DataFrame, optional (default = None)
+                    Initial values for additional parameters for non-Gaussian likelihoods
+                    (e.g., shape parameter of a gamma or negative binomial likelihood) (can be None).
+                - estimate_cov_par_index : list, numpy 1-D array, pandas Series / one-column DataFrame with integer data or None, optional (default = -1) 
+                    This allows for disabling the estimation of some (or all) covariance parameters if estimate_cov_par_index != -1. 
+                    'estimate_cov_par_index' should then be a vector with length equal to the number of covariance parameters, 
+                    and estimate_cov_par_index[i] should be of bool type indicating whether parameter number i is estimated or not. 
+                    For instance, "estimate_cov_par_index": [1,1,0] means that the first two covariance parameters are estimated and the last one not. 
+                - estimate_aux_pars : bool, (default = True)
+                    If True, any additional parameters for non-Gaussian likelihoods are also estimated
+                    (e.g., shape parameter of a gamma or negative binomial likelihood).
                 - optimizer_cov : string, optional (default = "lbfgs")
                     Optimizer used for estimating covariance parameters.
-                    Options: "gradient_descent", "lbfgs", "fisher_scoring", "newton" ,"nelder_mead".
+                    Options: "lbfgs", "gradient_descent", "fisher_scoring", "newton" ,"nelder_mead".
                     If there are additional auxiliary parameters for non-Gaussian likelihoods, 'optimizer_cov' is also used for those
                 - optimizer_coef : string, optional (default = "wls" for Gaussian data and "lbfgs" for other likelihoods)
                     Optimizer used for estimating linear regression coefficients, if there are any
@@ -4854,52 +5015,6 @@ class GPModel(object):
                     log-likelihood or the parameters is below this value. 
                     If < 0, internal default values are used.
                     Default = 1e-6 except for "nelder_mead" for which the default is 1e-8.
-                - convergence_criterion : string, optional (default = "relative_change_in_log_likelihood")
-                    The convergence criterion used for terminating the optimization algorithm.
-                    Options: "relative_change_in_log_likelihood" or "relative_change_in_parameters".
-                - init_cov_pars : numpy array or pandas DataFrame, optional (default = None)
-                    Initial values for covariance parameters of Gaussian process and random effects (can be None).
-                    The order it the same as the order of the parameters in the summary function: first is the error
-                    variance (only for "gaussian" likelihood), next follow the variances of the grouped random effects
-                    (if there are any, in the order provided in 'group_data'), and then follow the marginal variance
-                    and the range of the Gaussian process. If there are multiple Gaussian processes, then the variances
-                    and ranges follow alternatingly. If 'init_cov_pars = None', an internatl choice is used that depends
-                    on the likelihood and the random effects type and covariance function. If you select the option
-                    'trace = True' in the 'params' argument, you will see the first initial covariance parameters
-                    in iteration 0.
-                - init_coef : numpy array or pandas DataFrame, optional (default = None)
-                    Initial values for the regression coefficients (if there are any, can be None)
-                - lr_cov : double, optional (default = 0.1 for "gradient_descent" and 1. otherwise)
-                    Initial learning rate for covariance parameters if a gradient-based optimization method is used.
-
-                        - If lr_cov < 0, internal default values are used (0.1 for "gradient_descent" and 1. otherwise).
-
-                        - If there are additional auxiliary parameters for non-Gaussian likelihoods, 'lr_cov' is also used for those.
-
-                        - For "lbfgs", this is divided by the norm of the gradient in the first iteration.
-
-                - lr_coef : double, optional (default = 0.1)
-                    Learning rate for fixed effect regression coefficients.
-                - use_nesterov_acc : bool, optional (default = True)
-                    If True, Nesterov acceleration is used for gradient descent.
-                - acc_rate_cov : double, optional (default = 0.5)
-                    Acceleration rate for covariance parameters for Nesterov acceleration.
-                - acc_rate_coef : double, optional (default = 0.5)
-                    Acceleration rate for regression coefficients (if there are any) for Nesterov acceleration.
-                - momentum_offset : integer, optional (default = 2)
-                    Number of iterations for which no momentum is applied in the beginning.
-                - trace : bool, optional (default = False)
-                    If True, information on the progress of the parameter optimization is printed.
-                - std_dev : bool (default=False)
-                    If True, approximate standard deviations are calculated for the covariance parameters
-                    (= square root of diagonal of the inverse Fisher information for Gaussian likelihoods and
-                    square root of diagonal of a numerically approximated inverse Hessian for non-Gaussian likelihoods).
-                - init_aux_pars : numpy array or pandas DataFrame, optional (default = None)
-                    Initial values for additional parameters for non-Gaussian likelihoods
-                    (e.g., shape parameter of a gamma or negative binomial likelihood) (can be None).
-                - estimate_aux_pars : bool, (default = True)
-                    If True, any additional parameters for non-Gaussian likelihoods are also estimated
-                    (e.g., shape parameter of a gamma or negative binomial likelihood).
                 - cg_max_num_it: integer, optional (default = 1000)
                     Maximal number of iterations for conjugate gradient algorithms.
                 - cg_max_num_it_tridiag: integer, optional (default = 1000)
@@ -4917,11 +5032,15 @@ class GPModel(object):
                     every time a trace is calculated.
                 - seed_rand_vec_trace: integer, optional (default = 1)
                     Seed number to generate random vectors (e.g., Rademacher).
-                - piv_chol_rank: integer, optional (default = 50)
-                    Rank of the pivoted Cholesky decomposition used as preconditioner in conjugate gradient algorithms.
                 - cg_preconditioner_type: string, optional
                     Type of preconditioner used for conjugate gradient algorithms.
 
+                        - Options for grouped random effects: 
+
+                            - "ssor" (= default): SSOR preconditioner
+
+                            - "incomplete_cholesky": zero fill-in incomplete Cholesky factorization
+                        
                         - Options for likelihood != "gaussian" and gp_approx == "vecchia" or likelihood == "gaussian" and gp_approx == "vecchia_latent":
 
                             - "vadu" (= default): (B^T * (D^-1 + W) * B) as preconditioner for inverting (B^T * D^-1 * B + W), where B^T * D^-1 * B approx= Sigma^-1
@@ -4932,11 +5051,49 @@ class GPModel(object):
 
                             - "incomplete_cholesky": zero fill-in incomplete (reverse) Cholesky factorization of (B^T * D^-1 * B + W) using the sparsity pattern of B^T * D^-1 * B approx= Sigma^-1 
 
+                        - Options for likelihood != "gaussian" and gp_approx == "full_scale_vecchia"
+
+                            - "fitc" ( = default): FITC / modified predictive process preconditioner
+
+                            - "vifdu": VIF with diagonal update preconditioner 
+                        
                         - Options for likelihood == "gaussian" and gp_approx == "full_scale_tapering":
 
                             - "fitc" (= default): modified predictive process preconditioner
 
                             - "none": no preconditioner
+
+                - fitc_piv_chol_preconditioner_rank: integer, optional 
+                    Rank of the FITC and pivoted Cholesky decomposition preconditioners for iterative methods for Vecchia and VIF approximations (for full_scale_tapering, the same inducing points as in the approximation as used). Internal default values if None or < 0: 
+                
+                    - 200 for the FITC preconditioner 
+
+                    - 50 for the pivoted Cholesky decomposition preconditioner
+                
+                - convergence_criterion : string, optional (default = "relative_change_in_log_likelihood", only relevant for "gradient_descent", "fisher_scoring", and "newton")
+                    The convergence criterion used for terminating the optimization algorithm.
+                    Options: "relative_change_in_log_likelihood" or "relative_change_in_parameters".
+                - lr_cov : double, optional (default = 0.1 for "gradient_descent" and 1. otherwise, only relevant for "gradient_descent", "fisher_scoring", and "newton")
+                    Initial learning rate for covariance parameters if a gradient-based optimization method is used.
+
+                        - If lr_cov < 0, internal default values are used (0.1 for "gradient_descent" and 1. otherwise).
+
+                        - If there are additional auxiliary parameters for non-Gaussian likelihoods, 'lr_cov' is also used for those.
+
+                        - For "lbfgs", this is divided by the norm of the gradient in the first iteration.
+
+                - lr_coef : double, optional (default = 0.1, only relevant for "gradient_descent", "fisher_scoring", and "newton")
+                    Learning rate for fixed effect regression coefficients.
+                - use_nesterov_acc : bool, optional (default = True, only relevant for "gradient_descent")
+                    If True, Nesterov acceleration is used for gradient descent.
+                - acc_rate_cov : double, optional (default = 0.5, only relevant for "gradient_descent")
+                    Acceleration rate for covariance parameters for Nesterov acceleration.
+                - acc_rate_coef : double, optional (default = 0.5, only relevant for "gradient_descent")
+                    Acceleration rate for regression coefficients (if there are any) for Nesterov acceleration.
+                - momentum_offset : integer, optional (default = 2, only relevant for "gradient_descent")
+                    Number of iterations for which no momentum is applied in the beginning.
+                - m_lbfgs : integer, optional (default = 6)
+                    Number of corrections to approximate the inverse Hessian matrix for the "lbfgs" optimizer
 
         offset : numpy 1-D array or None, optional (default=None)
             Additional fixed effects contributions that are added to the linear predictor (= offset).
@@ -4986,7 +5143,7 @@ class GPModel(object):
                 raise ValueError("Incorrect number of data points in X")
             self.has_covariates = True
             self.num_covariates = X.shape[1]
-            self.num_coef = self.num_covariates * self.num_sets_re
+            self.num_coef = self.num_covariates * self.num_sets_fe
             X_c, _, _ = c_float_array(X.flatten(order='F'))
             self.coef_names = []
             for ii in range(self.num_covariates):
@@ -4994,7 +5151,7 @@ class GPModel(object):
                     self.coef_names.append("Covariate_" + str(ii + 1))
                 else:
                     self.coef_names.append(X_names[ii])
-            if self.num_sets_re == 2:
+            if self.num_sets_fe == 2:
                 self.coef_names = self.coef_names + [name + "_scale" for name in self.coef_names]
         else:
             self.has_covariates = False
@@ -5066,7 +5223,7 @@ class GPModel(object):
                 raise ValueError("'fixed_effects' needs to be a numpy.ndarray ")
             if len(fixed_effects.shape) != 1:
                 raise ValueError("'fixed_effects' needs to be a vector / one-dimensional numpy.ndarray ")
-            if fixed_effects.shape[0] != self.num_data * self.num_sets_re:
+            if fixed_effects.shape[0] != self.num_data * self.num_sets_fe:
                 raise ValueError("Length of 'fixed_effects' is not correct ")
             fixed_effects_c = fixed_effects.astype(np.float64)
             fixed_effects_c = fixed_effects_c.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
@@ -5088,12 +5245,41 @@ class GPModel(object):
 
         Parameters
         ----------
-        params : dict
+        params : dict or None, optional (default=None)
             Parameters for the estimation / optimization
 
+                - trace : bool, optional (default = False)
+                    If True, information on the progress of the parameter optimization is printed.                
+                - std_dev : bool (default=False)
+                    If True, approximate standard deviations are calculated for the covariance parameters
+                    (= square root of diagonal of the inverse Fisher information for Gaussian likelihoods and
+                    square root of diagonal of a numerically approximated inverse Hessian for non-Gaussian likelihoods).
+                - init_cov_pars : numpy array or pandas DataFrame, optional (default = None)
+                    Initial values for covariance parameters of Gaussian process and random effects (can be None).
+                    The order is the same as the order of the parameters in the summary function: first is the error
+                    variance (only for "gaussian" likelihood), next follow the variances of the grouped random effects
+                    (if there are any, in the order provided in 'group_data'), and then follow the marginal variance
+                    and the range of the Gaussian process. If there are multiple Gaussian processes, then the variances
+                    and ranges follow alternatingly. If 'init_cov_pars = None', an internatl choice is used that depends
+                    on the likelihood and the random effects type and covariance function. If you select the option
+                    'trace = True' in the 'params' argument, you will see the first initial covariance parameters
+                    in iteration 0.
+                - init_coef : numpy array or pandas DataFrame, optional (default = None)
+                    Initial values for the regression coefficients (if there are any, can be None)
+                - init_aux_pars : numpy array or pandas DataFrame, optional (default = None)
+                    Initial values for additional parameters for non-Gaussian likelihoods
+                    (e.g., shape parameter of a gamma or negative binomial likelihood) (can be None).
+                - estimate_cov_par_index : list, numpy 1-D array, pandas Series / one-column DataFrame with integer data or None, optional (default = -1) 
+                    This allows for disabling the estimation of some (or all) covariance parameters if estimate_cov_par_index != -1. 
+                    'estimate_cov_par_index' should then be a vector with length equal to the number of covariance parameters, 
+                    and estimate_cov_par_index[i] should be of bool type indicating whether parameter number i is estimated or not. 
+                    For instance, "estimate_cov_par_index": [1,1,0] means that the first two covariance parameters are estimated and the last one not. 
+                - estimate_aux_pars : bool, (default = True)
+                    If True, any additional parameters for non-Gaussian likelihoods are also estimated
+                    (e.g., shape parameter of a gamma or negative binomial likelihood).
                 - optimizer_cov : string, optional (default = "lbfgs")
                     Optimizer used for estimating covariance parameters.
-                    Options: "gradient_descent", "lbfgs", "fisher_scoring", "newton", "nelder_mead".
+                    Options: "lbfgs", "gradient_descent", "fisher_scoring", "newton" ,"nelder_mead".
                     If there are additional auxiliary parameters for non-Gaussian likelihoods, 'optimizer_cov' is also used for those
                 - optimizer_coef : string, optional (default = "wls" for Gaussian data and "lbfgs" for other likelihoods)
                     Optimizer used for estimating linear regression coefficients, if there are any
@@ -5107,55 +5293,9 @@ class GPModel(object):
                     Maximal number of iterations for optimization algorithm.
                 - delta_rel_conv : double, optional (default = 1e-6 except for "nelder_mead" for which the default is 1e-8)
                     Convergence tolerance. The algorithm stops if the relative change in eiher the (approximate)
-                    log-likelihood or the parameters is below this value.
+                    log-likelihood or the parameters is below this value. 
                     If < 0, internal default values are used.
                     Default = 1e-6 except for "nelder_mead" for which the default is 1e-8.
-                - convergence_criterion : string, optional (default = "relative_change_in_log_likelihood")
-                    The convergence criterion used for terminating the optimization algorithm.
-                    Options: "relative_change_in_log_likelihood" or "relative_change_in_parameters".
-                - init_cov_pars : numpy array or pandas DataFrame, optional (default = None)
-                    Initial values for covariance parameters of Gaussian process and random effects (can be None).
-                    The order it the same as the order of the parameters in the summary function: first is the error
-                    variance (only for "gaussian" likelihood), next follow the variances of the grouped random effects
-                    (if there are any, in the order provided in 'group_data'), and then follow the marginal variance
-                    and the range of the Gaussian process. If there are multiple Gaussian processes, then the variances
-                    and ranges follow alternatingly. If 'init_cov_pars = None', an internatl choice is used that depends
-                    on the likelihood and the random effects type and covariance function. If you select the option
-                    'trace = True' in the 'params' argument, you will see the first initial covariance parameters
-                    in iteration 0.
-                - init_coef : numpy array or pandas DataFrame, optional (default = None)
-                    Initial values for the regression coefficients (if there are any, can be None)
-                - lr_cov : double, optional (default = 0.1 for "gradient_descent" and 1. otherwise)
-                    Initial learning rate for covariance parameters if a gradient-based optimization method is used.
-
-                        - If lr_cov < 0, internal default values are used (0.1 for "gradient_descent" and 1. otherwise).
-
-                        - If there are additional auxiliary parameters for non-Gaussian likelihoods, 'lr_cov' is also used for those.
-
-                        - For "lbfgs", this is divided by the norm of the gradient in the first iteration.
-
-                - lr_coef : double, optional (default = 0.1)
-                    Learning rate for fixed effect regression coefficients.
-                - use_nesterov_acc : bool, optional (default = True)
-                    If True, Nesterov acceleration is used for gradient descent.
-                - acc_rate_cov : double, optional (default = 0.5)
-                    Acceleration rate for covariance parameters for Nesterov acceleration.
-                - acc_rate_coef : double, optional (default = 0.5)
-                    Acceleration rate for regression coefficients (if there are any) for Nesterov acceleration.
-                - momentum_offset : integer, optional (default = 2)
-                    Number of iterations for which no momentum is applied in the beginning.
-                - trace : bool, optional (default = False)
-                    If True, information on the progress of the parameter optimization is printed.
-                - std_dev : bool (default=False)
-                    If True, approximate standard deviations are calculated for the covariance parameters
-                    (= square root of diagonal of the inverse Fisher information for Gaussian likelihoods and
-                    square root of diagonal of a numerically approximated inverse Hessian for non-Gaussian likelihoods).
-                - init_aux_pars : numpy array or pandas DataFrame, optional (default = None)
-                    Initial values for additional parameters for non-Gaussian likelihoods
-                    (e.g., shape parameter of a gamma or negative binomial likelihood) (can be None).
-                - estimate_aux_pars : bool, (default = True)
-                    If True, any additional parameters for non-Gaussian likelihoods are also estimated
-                    (e.g., shape parameter of a gamma or negative binomial likelihood).
                 - cg_max_num_it: integer, optional (default = 1000)
                     Maximal number of iterations for conjugate gradient algorithms.
                 - cg_max_num_it_tridiag: integer, optional (default = 1000)
@@ -5173,11 +5313,15 @@ class GPModel(object):
                     every time a trace is calculated.
                 - seed_rand_vec_trace: integer, optional (default = 1)
                     Seed number to generate random vectors (e.g., Rademacher).
-                - piv_chol_rank: integer, optional (default = 50)
-                    Rank of the pivoted Cholesky decomposition used as preconditioner in conjugate gradient algorithms.
                 - cg_preconditioner_type: string, optional
                     Type of preconditioner used for conjugate gradient algorithms.
 
+                        - Options for grouped random effects: 
+
+                            - "ssor" (= default): SSOR preconditioner
+
+                            - "incomplete_cholesky": zero fill-in incomplete Cholesky factorization
+                        
                         - Options for likelihood != "gaussian" and gp_approx == "vecchia" or likelihood == "gaussian" and gp_approx == "vecchia_latent":
 
                             - "vadu" (= default): (B^T * (D^-1 + W) * B) as preconditioner for inverting (B^T * D^-1 * B + W), where B^T * D^-1 * B approx= Sigma^-1
@@ -5188,11 +5332,47 @@ class GPModel(object):
 
                             - "incomplete_cholesky": zero fill-in incomplete (reverse) Cholesky factorization of (B^T * D^-1 * B + W) using the sparsity pattern of B^T * D^-1 * B approx= Sigma^-1 
 
+                        - Options for likelihood != "gaussian" and gp_approx == "full_scale_vecchia"
+
+                            - "fitc" ( = default): FITC / modified predictive process preconditioner
+
+                            - "vifdu": VIF with diagonal update preconditioner 
+                        
                         - Options for likelihood == "gaussian" and gp_approx == "full_scale_tapering":
 
                             - "fitc" (= default): modified predictive process preconditioner
 
                             - "none": no preconditioner
+
+                - fitc_piv_chol_preconditioner_rank: integer, optional 
+                    Rank of the FITC and pivoted Cholesky decomposition preconditioners for iterative methods for Vecchia and VIF approximations (for full_scale_tapering, the same inducing points as in the approximation as used). Internal default values if None or < 0: 
+                
+                    - 200 for the FITC preconditioner 
+
+                    - 50 for the pivoted Cholesky decomposition preconditioner
+                
+                - convergence_criterion : string, optional (default = "relative_change_in_log_likelihood", only relevant for "gradient_descent", "fisher_scoring", and "newton")
+                    The convergence criterion used for terminating the optimization algorithm.
+                    Options: "relative_change_in_log_likelihood" or "relative_change_in_parameters".
+                - lr_cov : double, optional (default = 0.1 for "gradient_descent" and 1. otherwise, only relevant for "gradient_descent", "fisher_scoring", and "newton")
+                    Initial learning rate for covariance parameters if a gradient-based optimization method is used.
+
+                        - If lr_cov < 0, internal default values are used (0.1 for "gradient_descent" and 1. otherwise).
+
+                        - If there are additional auxiliary parameters for non-Gaussian likelihoods, 'lr_cov' is also used for those.
+
+                        - For "lbfgs", this is divided by the norm of the gradient in the first iteration.
+
+                - lr_coef : double, optional (default = 0.1, only relevant for "gradient_descent", "fisher_scoring", and "newton")
+                    Learning rate for fixed effect regression coefficients.
+                - use_nesterov_acc : bool, optional (default = True, only relevant for "gradient_descent")
+                    If True, Nesterov acceleration is used for gradient descent.
+                - acc_rate_cov : double, optional (default = 0.5, only relevant for "gradient_descent")
+                    Acceleration rate for covariance parameters for Nesterov acceleration.
+                - acc_rate_coef : double, optional (default = 0.5, only relevant for "gradient_descent")
+                    Acceleration rate for regression coefficients (if there are any) for Nesterov acceleration.
+                - momentum_offset : integer, optional (default = 2, only relevant for "gradient_descent")
+                    Number of iterations for which no momentum is applied in the beginning.
 
         Example
         -------
@@ -5254,9 +5434,11 @@ class GPModel(object):
             ctypes.c_bool(self.params["reuse_rand_vec_trace"]),
             cg_preconditioner_type_c,
             ctypes.c_int(self.params["seed_rand_vec_trace"]),
-            ctypes.c_int(self.params["piv_chol_rank"]),
+            ctypes.c_int(self.params["fitc_piv_chol_preconditioner_rank"]),
             init_aux_pars_c,
-            ctypes.c_bool(self.params["estimate_aux_pars"])))
+            ctypes.c_bool(self.params["estimate_aux_pars"]),
+            self.params["estimate_cov_par_index"].ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+            ctypes.c_int(self.params["m_lbfgs"])))
         return self
 
     def _get_optim_params(self):
@@ -5435,19 +5617,9 @@ class GPModel(object):
         """
         cov_pars = self.get_cov_pars(format_pandas=True)
         print("=====================================================")
-        if self.model_fitted and not self.model_has_been_loaded_from_saved_file:
-            print("Model summary:")
-            ll = -self.get_current_neg_log_likelihood()
-            npar = self.num_cov_pars
-            if self.has_covariates:
-                npar = npar + self.num_coef
-            aic = 2 * npar - 2 * ll
-            bic = npar * np.log(self.num_data) - 2 * ll
-            printout = pd.DataFrame([round(ll, 2), round(aic, 2), round(bic, 2)]).transpose()
-            printout.columns = ["Log-lik", "AIC", "BIC"]
-            print(printout.to_string(index=False))
-            print("Nb. observations: " + str(self.num_data))
-            if (self.num_group_re + self.num_group_rand_coef) > 0:
+        print("Model summary:")
+        print("Nb. observations: " + str(self.num_data))
+        if (self.num_group_re + self.num_group_rand_coef) > 0:
                 outstr = pd.DataFrame(self.nb_groups.reshape((1, -1)),
                                       columns=self.re_comp_names[0:self.num_group_re]).to_string(index=False)
                 outstr = "Nb. groups: "
@@ -5456,6 +5628,16 @@ class GPModel(object):
                         outstr = outstr + ", "
                     outstr = outstr + str(self.nb_groups[i]) + " (" + self.re_comp_names[i] + ")"
                 print(outstr)
+        if self.model_fitted:            
+            ll = -self.get_current_neg_log_likelihood()
+            npar = self.num_cov_pars
+            if self.has_covariates:
+                npar = npar + self.num_coef
+            aic = 2 * npar - 2 * ll
+            bic = npar * np.log(self.num_data) - 2 * ll
+            printout = pd.DataFrame([round(ll, 2), round(aic, 2), round(bic, 2)]).transpose()
+            printout.columns = ["Log-lik", "AIC", "BIC"]
+            print(printout.to_string(index=False))            
             print("-----------------------------------------------------")
         print("Covariance parameters (random effects):")
         print(round(cov_pars.transpose(), 4))
@@ -5694,21 +5876,21 @@ class GPModel(object):
                     if gp_rand_coef_data_pred.shape[1] != self.num_gp_rand_coef:
                         raise ValueError("Incorrect number of covariates in gp_rand_coef_data_pred")
                     gp_rand_coef_data_pred_c, _, _ = c_float_array(gp_rand_coef_data_pred.flatten(order='F'))
-            # Set IDs for independent processes (cluster_ids)
+            # Set IDs for independent processes (cluster_ids_pred)
             if cluster_ids_pred is not None:
                 cluster_ids_pred = _format_check_1D_data(cluster_ids_pred, data_name="cluster_ids_pred",
                                                          check_data_type=False, check_must_be_int=False,
                                                          convert_to_type=None)
                 if cluster_ids_pred.shape[0] != num_data_pred:
-                    raise ValueError("Incorrect number of data points in cluster_ids_pred")
+                    raise ValueError("Incorrect number of data points in 'cluster_ids_pred'")
                 if self.cluster_ids_map_to_int is None and not np.issubdtype(cluster_ids_pred.dtype, np.integer):
                     error_message = True
                     if np.issubdtype(cluster_ids_pred.dtype, np.double):
                         if (np.floor(cluster_ids_pred) == cluster_ids_pred).all():
                             error_message = False
                     if error_message:
-                        raise ValueError("cluster_ids_pred needs to be of type int as the data provided in cluster_ids "
-                                         "when initializing the model was also int (or cluster_ids was not provided)")
+                        raise ValueError("'cluster_ids_pred' needs to be of type int as the data provided in 'cluster_ids' "
+                                         "when initializing the model was also int (or 'cluster_ids' was not provided)")
                 if self.cluster_ids_map_to_int is not None:
                     # Convert cluster_ids_pred to int
                     cluster_ids_pred_map_to_int = dict(
@@ -5765,7 +5947,7 @@ class GPModel(object):
                 raise ValueError("'offset' needs to be a numpy.ndarray")
             if len(offset.shape) != 1:
                 raise ValueError("'offset' needs to be a vector / one-dimensional numpy.ndarray ")
-            if offset.shape[0] != self.num_data:
+            if offset.shape[0] != (self.num_data * self.num_sets_fe):
                 raise ValueError("Incorrect number of data points in 'offset'")
             offset = offset.astype(np.float64)
             offset_c = offset.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
@@ -5774,7 +5956,7 @@ class GPModel(object):
                 raise ValueError("'offset_pred' needs to be a numpy.ndarray")
             if len(offset_pred.shape) != 1:
                 raise ValueError("'offset_pred' needs to be a vector / one-dimensional numpy.ndarray ")
-            if offset_pred.shape[0] != num_data_pred:
+            if offset_pred.shape[0] != (num_data_pred * self.num_sets_fe):
                 raise ValueError("Incorrect number of data points in 'offset_pred'")
             offset_pred = offset_pred.astype(np.float64)
             offset_pred_c = offset_pred.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
@@ -5875,7 +6057,14 @@ class GPModel(object):
             nsim_var_pred : integer or None, optional (default=None)
                 The number of samples when simulation is used for calculating predictive variances
 
-                Default value if None: 1000
+                Internal default values if None: 
+                
+                    - 500 for grouped random effects
+                    
+                    - 1000 for gp_approx = "vecchia" and gp_approx = "full_scale_tapering"
+
+                    - 100 for gp_approx = "full_scale_vecchia"
+
             rank_pred_approx_matrix_lanczos : integer or None, optional (default=None)
                 The rank of the matrix for approximating predictive covariances obtained using the Lanczos algorithm
 
@@ -5963,7 +6152,7 @@ class GPModel(object):
         if vecchia_pred_type is not None:
             self.vecchia_pred_type = vecchia_pred_type
             vecchia_pred_type_c = c_str(vecchia_pred_type)
-        # Set IDs for independent processes (cluster_ids)
+        # Set IDs for independent processes (cluster_ids_pred)
         if cluster_ids_pred is not None:
             cluster_ids_pred = _format_check_1D_data(cluster_ids_pred, data_name="cluster_ids_pred",
                                                      check_data_type=False, check_must_be_int=False,
@@ -5976,8 +6165,8 @@ class GPModel(object):
                     if (np.floor(cluster_ids_pred) == cluster_ids_pred).all():
                         error_message = False
                 if error_message:
-                    raise ValueError("cluster_ids_pred needs to be of type int as the data provided in cluster_ids "
-                                     "when initializing the model was also int (or cluster_ids was not provided)")
+                    raise ValueError("'cluster_ids_pred' needs to be of type int as the data provided in 'cluster_ids' "
+                                     "when initializing the model was also int (or 'cluster_ids' was not provided)")
             if self.cluster_ids_map_to_int is not None:
                 # Convert cluster_ids_pred to int
                 cluster_ids_pred_map_to_int = dict(
@@ -6154,15 +6343,18 @@ class GPModel(object):
         model_dict["cov_function"] = self.cov_function
         model_dict["cov_fct_shape"] = self.cov_fct_shape
         model_dict["gp_approx"] = self.gp_approx
+        model_dict["matrix_inversion_method"] = self.matrix_inversion_method
+        model_dict["weights"] = self.weights
+        model_dict["likelihood_learning_rate"] = self.likelihood_learning_rate
         model_dict["cov_fct_taper_range"] = self.cov_fct_taper_range
         model_dict["cov_fct_taper_shape"] = self.cov_fct_taper_shape
         model_dict["num_ind_points"] = self.num_ind_points
         model_dict["cover_tree_radius"] = self.cover_tree_radius
         model_dict["ind_points_selection"] = self.ind_points_selection
-        model_dict["matrix_inversion_method"] = self.matrix_inversion_method
         model_dict["seed"] = self.seed
         model_dict["num_parallel_threads"] = self.num_parallel_threads
         model_dict["num_sets_re"] = self.num_sets_re
+        model_dict["num_sets_fe"] = self.num_sets_fe
         # Covariate data
         model_dict["has_covariates"] = self.has_covariates
         if self.has_covariates:
@@ -6174,6 +6366,8 @@ class GPModel(object):
         model_dict["params"]["init_aux_pars"] = self.get_aux_pars(format_pandas=False)
         # Note: for simplicity, this is put into 'init_aux_pars'. When loading the model, 'init_aux_pars' are correctly set
         model_dict["model_fitted"] = self.model_fitted
+        if self.model_fitted:
+            model_dict["current_neg_log_likelihood"] = self.get_current_neg_log_likelihood()
         return model_dict
 
     def save_model(self, filename):
@@ -6249,9 +6443,12 @@ class GPModel(object):
         >>> gp_model.get_current_neg_log_likelihood()
         """
 
-        negll = ctypes.c_double(0)
-        _safe_call(_LIB.GPB_GetCurrentNegLogLikelihood(
-            self.handle,
-            ctypes.byref(negll)))
+        if self.model_has_been_loaded_from_saved_file:
+            return self.current_neg_log_likelihood_loaded_from_file
+        else:        
+            negll = ctypes.c_double(0)
+            _safe_call(_LIB.GPB_GetCurrentNegLogLikelihood(
+                self.handle,
+                ctypes.byref(negll)))
 
-        return negll.value
+            return negll.value

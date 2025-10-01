@@ -6,16 +6,6 @@ Dataset <- R6::R6Class(
   cloneable = FALSE,
   public = list(
 
-    # Finalize will free up the handles
-    finalize = function() {
-      .Call(
-        LGBM_DatasetFree_R
-        , private$handle
-      )
-      private$handle <- NULL
-      return(invisible(NULL))
-    },
-
     # Initialize will create a starter dataset
     initialize = function(data,
                           params = list(),
@@ -558,7 +548,7 @@ Dataset <- R6::R6Class(
           # If updating failed but raw data is available, modify the params
           # on the R side and re-set ("deconstruct") the Dataset
           private$params <- modifyList(private$params, params)
-          self$finalize()
+          private$finalize()
         })
       }
       return(invisible(self))
@@ -594,7 +584,7 @@ Dataset <- R6::R6Class(
       private$categorical_feature <- categorical_feature
 
       # Finalize and return self
-      self$finalize()
+      private$finalize()
       return(invisible(self))
 
     },
@@ -634,7 +624,7 @@ Dataset <- R6::R6Class(
       private$reference <- reference
 
       # Finalize and return self
-      self$finalize()
+      private$finalize()
       return(invisible(self))
 
     },
@@ -665,7 +655,17 @@ Dataset <- R6::R6Class(
     used_indices = NULL,
     info = NULL,
     version = 0L,
-
+    
+    # Finalize will free up the handles
+    finalize = function() {
+      .Call(
+        LGBM_DatasetFree_R
+        , private$handle
+      )
+      private$handle <- NULL
+      return(invisible(NULL))
+    },
+    
     # Get handle
     get_handle = function() {
 
@@ -704,7 +704,7 @@ Dataset <- R6::R6Class(
       private$predictor <- predictor
 
       # Finalize and return self
-      self$finalize()
+      private$finalize()
       return(invisible(self))
 
     }

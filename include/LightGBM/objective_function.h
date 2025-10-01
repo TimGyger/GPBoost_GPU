@@ -116,9 +116,9 @@ namespace LightGBM {
 		bool HasGPModel() const;
 
 		/*!
-		* \brief Returns the number of parameters which are related to fixed and random effects (>1 e.g. for heteroscedastic models)
+		* \brief Returns the number of fixed effects sets, i.e., the numer of trees per iteration (>1 e.g. for heteroscedastic models)
 		*/
-		int GetNumSetsRE_GPModel() const;
+		int GetNumSetsFixedEffects() const;
 
 		/*!
 		* \brief Returns true if the random effect / GP model should be used for evaluation
@@ -146,9 +146,9 @@ namespace LightGBM {
 		* \param new_score Number of leaves
 		* \param[out] lr Optimal learning rate
 		*/
-		virtual void LineSearchLearningRate(const double* score,
+		void LineSearchLearningRate(const double* score,
 			const double* new_score,
-			double& lr) const = 0;//used only for "regression" loss
+			double& lr) const;//used only for "regression" loss
 
 	protected:
 		///*! \brief Gaussian process model */
@@ -162,8 +162,8 @@ namespace LightGBM {
 		// but this string than keeps track of the likelihood. This is a copy of re_model_->GetLikelihood(). It is saved here for speed-up
 		/*! \brief If true, the learning rates for the covariance and potential auxiliary parameters are kept at the values from the previous boosting iteration and not re-initialized when optimizing them */
 		bool reuse_learning_rates_gp_model_ = true;//currently only properly initialized for "regression" loss
-		/*! \brief Number of sets of random effects / GPs for different parameters with REs / GPs. This is larger than 1, e.g., heteroscedastic models */
-		int num_sets_re_ = 1;
+		/*! \brief Number of fixed effects sets, i.e., the numer of trees per iteration (>1 e.g. for heteroscedastic models) */
+		int num_sets_fixed_effects_ = 1;
 
 	};
 

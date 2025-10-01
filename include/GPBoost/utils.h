@@ -26,6 +26,9 @@ namespace GPBoost {
 	/*! \brief Tolerance level when comparing two vectors for equality */
 	const double EPSILON_VECTORS = 1e-10;
 
+	const double TINY_NUMBER = (std::numeric_limits<double>::has_denorm == std::denorm_present)
+		? std::numeric_limits<double>::denorm_min() : std::numeric_limits<double>::min();
+
 	/*! \brief Small numbers by which the diagonals of some matrices are multiplied to make inversion numerically stable */
 	const double JITTER_MUL = 1. + 1e-10;
 
@@ -57,22 +60,26 @@ namespace GPBoost {
 	}
 
 	/*! \brief Checking whether a vector contains a zero */
-	inline bool VectorContainsZero(const vec_t& v) {
-		bool has_zero;
-#pragma omp parallel for schedule(static) shared(has_zero)
-		for (int i = 0; i < (int)v.size(); ++i) {
-			if (has_zero) {
-				continue;
-			}
-			if (IsZero<double>(v[i])) {
-#pragma omp critical
-				{
-					has_zero = true;
-				}
-			}
+	template <typename T>//T can be double or float
+	inline bool HasZero(const T* v, data_size_t num_data) {
+		int has_zero = 0;
+#pragma omp parallel for reduction(|:has_zero) schedule(static)
+		for (data_size_t i = 0; i < num_data; ++i) {
+			if (IsZero<T>(v[i])) has_zero = 1;
 		}
-		return has_zero;
-	}//end VectorContainsZero
+		return has_zero != 0;
+	}//end HasZero
+
+	/*! \brief Checking whether a vector contains negative values */
+	template <typename T>//T can be double or float
+	inline bool HasNegativeValues(const T* v, data_size_t num_data) {
+		int has_negative = 0;
+#pragma omp parallel for reduction(|:has_negative) schedule(static)
+		for (data_size_t i = 0; i < num_data; ++i) {
+			if (v[i] < 0.0) has_negative = 1;
+		}
+		return has_negative != 0;
+	}//end HasNegativeValues
 
 
 	/*! \brief Checking whether a number 'a' is smaller than another number 'b' */

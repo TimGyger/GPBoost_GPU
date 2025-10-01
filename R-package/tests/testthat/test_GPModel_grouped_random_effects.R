@@ -104,6 +104,15 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
                            params = list(optimizer_cov = "adam", std_dev = TRUE))
     expect_lt(sum(abs(as.vector(gp_model$get_cov_pars())-cov_pars)),TOLERANCE_MEDIUM)
     expect_equal(gp_model$get_num_optim_iter(), 275)
+    # fix some covariance parameters
+    params_loc <- list(optimizer_cov = "lbfgs", std_dev = TRUE,
+                       estimate_cov_par_index = c(1,0), init_cov_pars=c(0.23, 0.45))
+    gp_model_fix <- fitGPModel(group_data = group, y = y, params = params_loc)
+    nll_opt_fix <- 1229.514733
+    cov_pars_fix <- c(0.50600551128, 0.02385332856, 0.45000000000, 0.07083578226)
+    expect_lt(sum(abs(as.vector(gp_model_fix$get_cov_pars())-cov_pars_fix)),TOLERANCE_STRICT)
+    expect_lt(sum(abs(gp_model_fix$get_cov_pars()[1,2]-params_loc$init_cov_pars[2])),TOLERANCE_STRICT)
+    expect_lt(abs(gp_model_fix$get_current_neg_log_likelihood()-nll_opt_fix), TOLERANCE_STRICT)
     
     # Evaluation of likelihood
     ll <- gp_model$neg_log_likelihood(y=y,cov_pars=gp_model$get_cov_pars()[1,])
@@ -363,11 +372,13 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
         tolerance_loc_1 <- TOLERANCE_LOOSE
         tolerance_loc_2 <- 1E-4
         tolerance_loc_3 <- 1E-2
+        tolerance_loc_4 <- 0.5
         loop_cg_PC = c("ssor", "zic")
       } else {
         tolerance_loc_1 <- TOLERANCE_MEDIUM
         tolerance_loc_2 <- TOLERANCE_STRICT
         tolerance_loc_3 <- 1E-4
+        tolerance_loc_4 <- TOLERANCE_MEDIUM
         loop_cg_PC = c("ssor")
       }
       for (cg_preconditioner_type in loop_cg_PC) {
@@ -391,6 +402,18 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
           opt_it <- 4
         }
         expect_equal(gp_model$get_num_optim_iter(), opt_it)
+        
+        # fix some covariance parameters
+        params_loc <- list(optimizer_cov = "lbfgs", std_dev = TRUE, 
+                           cg_preconditioner_type=cg_preconditioner_type, num_rand_vec_trace=100, 
+                           init_cov_pars=c(0.23, 0.1, 0.5), estimate_cov_par_index = c(1,1,0))
+        gp_model_fix <- fitGPModel(group_data = cbind(group,group2), y = y, matrix_inversion_method = inv_method,
+                                   params = params_loc)
+        nll_opt_fix <- 1328.897384
+        cov_pars_fix <- c(0.52972794645, 0.02562029714, 1.21929637610, 0.18314784671, 0.50000000000, 0.10972005168)
+        expect_lt(sum(abs(as.vector(gp_model_fix$get_cov_pars())-cov_pars_fix)),tolerance_loc_1)
+        expect_lt(sum(abs(gp_model_fix$get_cov_pars()[1,3]-params_loc$init_cov_pars[3])),TOLERANCE_STRICT)
+        expect_lt(abs(gp_model_fix$get_current_neg_log_likelihood()-nll_opt_fix), tolerance_loc_4)
         
         # Predict training data random effects
         if(inv_method == "cholesky"){
@@ -448,20 +471,20 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
         expected_cov <- c(3.1, 1.0, 3.0, 1.0, 3.1, 1.0, 3.0, 1.0, 3.1)
         expect_lt(sum(abs(pred$mu-expected_mu)),TOLERANCE_STRICT)
         expect_lt(sum(abs(as.vector(pred$cov)-expected_cov)),TOLERANCE_MEDIUM)
-      }
-    }
+      }# end loop PC
+    } #end loop matrix inversion method
     
     ## Two crossed random effects and a random slope
     y <- Z1%*%b1 + Z2%*%b2 + Z3%*%b3 + xi
     gp_model <- fitGPModel(group_data = cbind(group,group2),
                            group_rand_coef_data = x,
                            ind_effect_group_rand_coef = 1,
-                           y = y,
+                           y = y, matrix_inversion_method = "cholesky",
                            params = list(optimizer_cov = "fisher_scoring", maxit=5, std_dev = TRUE))
     expected_values <- c(0.49554952, 0.02546769, 1.24880860, 0.18983953, 1.05505134, 0.22337199, 1.13840014, 0.17950490)
     expect_lt(sum(abs(as.vector(gp_model$get_cov_pars())-expected_values)),TOLERANCE_MEDIUM)
     expect_equal(gp_model$get_num_optim_iter(), 5)
-  
+    
     # Predict training data random effects
     cov_pars <- gp_model$get_cov_pars()[1,]
     all_training_data_random_effects <- predict_training_data_random_effects(gp_model, predict_var = TRUE)
@@ -490,10 +513,10 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
                      predict_var = TRUE, predict_response = FALSE)
     expect_lt(sum(abs(pred_random_effects_crossed[,1] - preds$mu)),TOLERANCE_STRICT)
     expect_lt(sum(abs(pred_random_effects_crossed[,2] - (preds$var - cov_pars[2]))),TOLERANCE_STRICT)
-  
+    
     # Prediction
     gp_model <- GPModel(group_data = cbind(group,group2),
-                        group_rand_coef_data = x, ind_effect_group_rand_coef = 1)
+                        group_rand_coef_data = x, ind_effect_group_rand_coef = 1, matrix_inversion_method = "cholesky")
     group_data_pred = cbind(c(1,1,m+1),c(2,1,length(group2)+1))
     group_rand_coef_data_pred = c(0,10,0.3)
     expect_error(gp_model$predict(group_data_pred = group_data_pred,
@@ -518,7 +541,7 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
     gp_model <- fitGPModel(group_data = cbind(group,group2),
                            group_rand_coef_data = x,
                            ind_effect_group_rand_coef = 1,
-                           y = y,
+                           y = y, matrix_inversion_method = "cholesky",
                            params = list(optimizer_cov = "gradient_descent", std_dev = FALSE, init_cov_pars=init_cov_pars))
     cov_pars <- c(0.4958303, 1.2493181, 1.0543343, 1.1388604 )
     expect_lt(sum(abs(as.vector(gp_model$get_cov_pars())-cov_pars)),TOLERANCE_STRICT)
@@ -528,19 +551,19 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
     gp_model <- fitGPModel(group_data = cbind(group,group2),
                            group_rand_coef_data = x,
                            ind_effect_group_rand_coef = 1,
-                           y = y,
+                           y = y, matrix_inversion_method = "cholesky",
                            params = list(optimizer_cov = "nelder_mead", std_dev = FALSE, delta_rel_conv=1e-6))
     expect_lt(sum(abs(as.vector(gp_model$get_cov_pars())-cov_pars)),TOL_VERY_LOOSE)
     # lbfgs
     gp_model <- fitGPModel(group_data = cbind(group,group2),  group_rand_coef_data = x,
-                           ind_effect_group_rand_coef = 1, y = y,
+                           ind_effect_group_rand_coef = 1, y = y, matrix_inversion_method = "cholesky",
                            params = list(optimizer_cov = "lbfgs", std_dev = FALSE))
     expect_lt(sum(abs(as.vector(gp_model$get_cov_pars())-cov_pars)),TOLERANCE_LOOSE)
     # Adam
     gp_model <- fitGPModel(group_data = cbind(group,group2),
                            group_rand_coef_data = x,
                            ind_effect_group_rand_coef = 1,
-                           y = y,
+                           y = y, matrix_inversion_method = "cholesky",
                            params = list(optimizer_cov = "adam", std_dev = FALSE))
     expect_lt(sum(abs(as.vector(gp_model$get_cov_pars())-cov_pars)),TOLERANCE_LOOSE)
     
@@ -556,7 +579,7 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
     init_cov_pars <- c(var(y)/2,rep(var(y)/2,2))
     gp_model <- fitGPModel(group_data = cbind(group,group2),
                            group_rand_coef_data = x, ind_effect_group_rand_coef = 1,
-                           drop_intercept_group_rand_effect = c(TRUE,FALSE), y = y,
+                           drop_intercept_group_rand_effect = c(TRUE,FALSE), y = y, matrix_inversion_method = "cholesky",
                            params = list(optimizer_cov = "gradient_descent", init_cov_pars=init_cov_pars))
     expected_values <- c(0.5017205, 1.0818474, 1.1157430)
     expect_lt(sum(abs(as.vector(gp_model$get_cov_pars())-expected_values)),TOLERANCE_STRICT)
@@ -589,7 +612,7 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
     # Prediction
     gp_model <- GPModel(group_data = cbind(group,group2),
                         group_rand_coef_data = x, ind_effect_group_rand_coef = 1,
-                        drop_intercept_group_rand_effect = c(TRUE,FALSE))
+                        drop_intercept_group_rand_effect = c(TRUE,FALSE), matrix_inversion_method = "cholesky")
     group_data_pred = cbind(c(1,1,m+1),c(2,1,length(group2)+1))
     group_rand_coef_data_pred = c(0,10,0.3)
     pred <- gp_model$predict(y = y, group_data_pred=group_data_pred,
@@ -699,7 +722,7 @@ if(Sys.getenv("GPBOOST_ALL_TESTS") == "GPBOOST_ALL_TESTS"){
                                            cluster_ids = cluster_ids,
                                            group_rand_coef_data = x,
                                            ind_effect_group_rand_coef = 1,
-                                           y = y,
+                                           y = y, matrix_inversion_method = "cholesky",
                                            params = list(optimizer_cov = "gradient_descent", std_dev = FALSE,
                                                          lr_cov = 0.1, use_nesterov_acc = TRUE, maxit = 1000, init_cov_pars=init_cov_pars,
                                                          convergence_criterion = "relative_change_in_parameters"))

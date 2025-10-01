@@ -129,6 +129,7 @@ yamc::shared_lock<yamc::alternate::shared_mutex> lock(&mtx);
 			}
 			else {
 				config_.has_gp_model = true;
+				config_.num_class = re_model->GetNumSetsFixedEffects();
 			}
 			auto param = Config::Str2Map(parameters);
 			config_.Set(param);
@@ -182,12 +183,12 @@ yamc::shared_lock<yamc::alternate::shared_mutex> lock(&mtx);
 				if (config_.sigmoid != 1.0) {
 					Log::Fatal("The GPBoost algorithm currently does not support a sigmoid != 1.0 ");
 				}
-				if (config_.objective != std::string("regression") && config_.objective != std::string("bernoulli_probit")
-					&& config_.objective != std::string("bernoulli_logit") && config_.objective != std::string("binary") 
-					&& config_.objective != std::string("poisson") && config_.objective != std::string("gamma") && 
-					config_.objective != std::string("negative_binomial") &&
+				if (config_.objective != std::string("regression") && config_.objective != std::string("bernoulli_probit") && 
+					config_.objective != std::string("bernoulli_logit") && config_.objective != std::string("binary") && 
+					config_.objective != std::string("poisson") && config_.objective != std::string("gamma") && 
+					config_.objective != std::string("negative_binomial") && config_.objective != std::string("negative_binomial_1") &&
 					config_.objective != std::string("t") && config_.objective != std::string("t_fix_df") &&
-					config_.objective != std::string("gaussian_heteroscedastic")) {
+					config_.objective != std::string("beta") && config_.objective != std::string("gaussian_heteroscedastic")) {
 					Log::Fatal("GPBoost currently does not support 'objective = %s' ", config_.objective.c_str());
 				}
 				// Make sure that objective for boosting and likelihood for re_model match, otherwise change them accordingly
@@ -2715,6 +2716,9 @@ int GPB_CreateREModel(int32_t num_data,
 	const char* matrix_inversion_method,
 	int seed,
 	int num_parallel_threads,
+	bool has_weights,
+	const double* weights,
+	double likelihood_learning_rate,
 	REModelHandle* out) {
 	API_BEGIN();
 	std::unique_ptr<REModel> ret;
@@ -2745,7 +2749,10 @@ int GPB_CreateREModel(int32_t num_data,
 		likelihood_additional_param,
 		matrix_inversion_method,
 		seed,
-		num_parallel_threads));
+		num_parallel_threads,
+		has_weights,
+		weights,
+		likelihood_learning_rate));
 	*out = ret.release();
 	API_END();
 }
@@ -2783,7 +2790,9 @@ int GPB_SetOptimConfig(REModelHandle handle,
 	int seed_rand_vec_trace,
 	int piv_chol_rank,
 	double* init_aux_pars,
-	bool estimate_aux_pars) {
+	bool estimate_aux_pars,
+	const int* estimate_cov_par_index,
+	int m_lbfgs) {
 	API_BEGIN();
 	REModel* ref_remodel = reinterpret_cast<REModel*>(handle);
 	ref_remodel->SetOptimConfig(init_cov_pars,
@@ -2812,7 +2821,9 @@ int GPB_SetOptimConfig(REModelHandle handle,
 		seed_rand_vec_trace,
 		piv_chol_rank,
 		init_aux_pars,
-		estimate_aux_pars);
+		estimate_aux_pars,
+		estimate_cov_par_index,
+		m_lbfgs);
 	API_END();
 }
 

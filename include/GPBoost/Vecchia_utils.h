@@ -18,11 +18,27 @@
 #include <cusparse.h>
 #include <cusolverDn.h>
 #endif
-
 namespace GPBoost {
 
 #ifdef USE_CUDA_GP
 
+	/*!
+	* \brief Finds the nearest_neighbors among the previous observations using bruteforce comparisons
+	* \param coords Coordinates of observations
+	* \param num_data Number of observations
+	* \param num_neighbors Maximal number of neighbors
+	* \param pars Covariance parameters
+	* \param start_at First query point
+	* \param dim_coords Dimension of coordinates
+	* \param corr_diag Diagonal of covariance matrix
+	* \param chol_ip_cross_cov inverse of Cholesky factor of inducing point matrix times cross covariance: Sigma_ip^-1/2 Sigma_cross_cov
+	* \param shape Shape parameter
+	* \param range Range parameter
+	* \param EPSILON_NUMBERS very small number
+	* \param dist_funct diastance function
+	* \param neighbors Vecchia neighbors
+	* \param start_at Used for space-time-Gneiting
+	*/
 	bool find_nearest_neighbors_bruteforce_GPU(
 		const den_mat_t& coords,
 		int num_data,
@@ -40,6 +56,24 @@ namespace GPBoost {
 		int start_dim
 	);
 
+	/*!
+	* \brief Finds the nearest_neighbors among the previous observations using bruteforce comparisons
+	* \param coords Coordinates of observations
+	* \param num_data Number of observations
+	* \param num_neighbors Maximal number of neighbors
+	* \param num_close_neighbors 
+	* \param start_at First query point
+	* \param end_search_at Last query point
+	* \param dim_coords Dimension of coordinates
+	* \param sort_sum Diagonal of covariance matrix
+	* \param chol_ip_cross_cov inverse of Cholesky factor of inducing point matrix times cross covariance: Sigma_ip^-1/2 Sigma_cross_cov
+	* \param sort_inv_sum 
+	* \param coords_sum 
+	* \param neighbors Vecchia neighbors
+	* \param dist_obs_neighbors Distances of Vecchia neighbors and coresponding points
+	* \param save_distances 
+	* \param has_duplicates 
+	* \param check_has_duplicates 	*/
 	bool find_nearest_neighbors_Vecchia_fast_GPU(
 		const den_mat_t& coords,
 		int num_data,
@@ -58,34 +92,8 @@ namespace GPBoost {
 		bool check_has_duplicates
 	);
 
-	bool LaunchCalcCovFactorGradientVecchia_GPU(
-		const double shape,                 // smoothness param
-		const double C,                     // range param
-		const int n,                        // number of data points
-		const int dim_coords,               // coordinate dimension
-		const double* __restrict__ coords,  // n * dim_coords, row-major (coords[i*dim + d])
-		const int* __restrict__ nn_ptr,     // length n+1  (nn_ptr[i+1]-nn_ptr[i] == k_i)
-		const int* __restrict__ nn_idx,     // flattened neighbor indices
-		const double jitter,                // e.g. 1e-8
-		const double nugget_var,            // e.g. 1e-8
-		double* __restrict__ B_data,        // flattened B rows: length == nn_ptr[n] (space preallocated)
-		double* __restrict__ D_data,    // length n
-		double* __restrict__ B_grad_data,   // length = num_params * total_nnz
-		double* __restrict__ D_grad_data,   // length = num_params * n
-		const double* __restrict__ C_vec,
-		const double* __restrict__ pars,
-		const int num_par,
-		const int num_par_gp,
-		bool gauss_likelihood,
-		bool transf_scale,
-		bool calc_cov_factor,
-		bool calc_gradient,
-		bool calc_gradient_nugget,
-		bool exclude_marg_var_grad,
-		bool ard,
-		const double EPSILON_NUMBERS
-	);
 #endif  // USE_CUDA_GP
+
 	/*!
 	* \brief Distance function
 	* \param coord_ind_i Index i
@@ -175,6 +183,7 @@ namespace GPBoost {
 	* \param prediction If true find neighbors for prediction locations
 	* \param cond_on_all If true condition on all points
 	* \param number of observations
+	* \param GPU_use If true, try to leverage GPU
 	*/
 	void find_nearest_neighbors_Vecchia_FSA_fast(const den_mat_t& coords,
 		int num_data,
@@ -191,7 +200,6 @@ namespace GPBoost {
 		bool prediction,
 		bool cond_on_all,
 		const int& num_data_obs,
-		int num_cov_trees,
 		bool GPU_use);
 
 	/*!
@@ -220,6 +228,7 @@ namespace GPBoost {
 	* \param neighbor_selection The way how neighbors are selected
 	* \param gen RNG
 	* \param save_distances If true, distances are saved in dist_obs_neighbors and dist_between_neighbors
+	* \param GPU_use If true, try to leverage GPU
 	*/
 	void find_nearest_neighbors_Vecchia_fast(const den_mat_t& coords,
 		int num_data,
@@ -280,6 +289,7 @@ namespace GPBoost {
 	* \param apply_tapering If true, tapering is applied to the covariance function (element-wise multiplication with a compactly supported Wendland correlation function)
 	* \param save_distances_isotropic_cov_fct If true, distances among points and neighbors are saved for Vecchia approximations for isotropic covariance functions
 	* \param gp_approx Gaussian process approximation
+	* \param GPU_use If true, try to leverage GPU
 	*/
 	void CreateREComponentsVecchia(data_size_t num_data,
 		int dim_gp_coords,
@@ -331,6 +341,7 @@ namespace GPBoost {
 	* \param[out] dist_obs_neighbors Distances needed for the Vecchia approximation : distances between locations and their neighbors(length = num_data - start_at)
 	* \param[out] dist_between_neighbors Distances needed for the Vecchia approximation : distances between all neighbors(length = num_data - start_at)
 	* \param save_distances_isotropic_cov_fct If true, distances among points and neighbors are saved for Vecchia approximations for isotropic covariance functions
+	* \param GPU_use If true, try to leverage GPU
 	*/
 	void UpdateNearestNeighbors(std::vector<std::shared_ptr<RECompGP<den_mat_t>>>& re_comps_vecchia_cluster_i,
 		std::vector<std::vector<int>>& nearest_neighbors_cluster_i,
@@ -347,8 +358,7 @@ namespace GPBoost {
 		std::vector<den_mat_t>& dist_obs_neighbors_cluster_i,
 		std::vector<den_mat_t>& dist_between_neighbors_cluster_i,
 		bool save_distances_isotropic_cov_fct,
-		bool GPU_use,
-		int num_cov_trees);
+		bool GPU_use);
 
 	/*!
 	* \brief Calculate matrices A and D_inv and their derivatives for the Vecchia approximation for one cluster (independent realization of GP)
@@ -379,6 +389,8 @@ namespace GPBoost {
 	* \param gauss_likelihood If true, the response variables have a Gaussian likelihood, otherwise not
 	* \param save_distances_isotropic_cov_fct If true, distances among points and neighbors are saved for Vecchia approximations for isotropic covariance functions
 	* \param gp_approx Gaussian process approximation
+	* \param add_diagonal Vector of (additional) observation specific nugget / error variance added to the diagonal
+	* \param estimate_cov_par_index Indicates which parameters are estimated (>0) and which not (<= 0)
 	*/
 	void CalcCovFactorGradientVecchia(data_size_t num_re_cluster_i,
 		bool calc_cov_factor,
@@ -407,7 +419,8 @@ namespace GPBoost {
 		bool gauss_likelihood,
 		bool save_distances_isotropic_cov_fct,
 		string_t& gp_approx,
-		bool GPU_use);
+		const double* add_diagonal,
+		const std::vector<int>& estimate_cov_par_index);
 
 	/*!
 	* \brief Calculate predictions (conditional mean and covariance matrix) using the Vecchia approximation for the covariance matrix of the observable process when observed locations appear first in the ordering
@@ -477,8 +490,7 @@ namespace GPBoost {
 		sp_mat_t& Bp,
 		vec_t& Dp,
 		bool save_distances_isotropic_cov_fct,
-		string_t& gp_approx,
-		bool GPU_use);
+		string_t& gp_approx);
 
 	/*!
 	* \brief Calculate predictions (conditional mean and covariance matrix) using the Vecchia approximation for the covariance matrix of the observable proces when prediction locations appear first in the ordering
@@ -502,6 +514,7 @@ namespace GPBoost {
 	* \param[out] pred_cov Predictive covariance matrix
 	* \param[out] pred_var Predictive variances
 	* \param save_distances_isotropic_cov_fct If true, distances among points and neighbors are saved for Vecchia approximations for isotropic covariance functions
+	* \param GPU_use If true, try to leverage GPU
 	*/
 	void CalcPredVecchiaPredictedFirstOrder(data_size_t cluster_i,
 		int num_data_pred,
@@ -544,6 +557,7 @@ namespace GPBoost {
 	* \param[out] pred_cov Predictive covariance matrix
 	* \param[out] pred_var Predictive variances
 	* \param save_distances_isotropic_cov_fct If true, distances among points and neighbors are saved for Vecchia approximations for isotropic covariance functions
+	* \param GPU_use If true, try to leverage GPU
 	 */
 	void CalcPredVecchiaLatentObservedFirstOrder(bool CondObsOnly,
 		const den_mat_t& gp_coords_mat_obs,
