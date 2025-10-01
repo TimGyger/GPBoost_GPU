@@ -440,18 +440,14 @@ namespace GPBoost {
 				string_t covfct = re_comp->CovFunctionName();
 				double cov_fct_shape;
 				int start_dim = 0;
+				int dist_funct = 0;
 				if (covfct == "space_time_gneiting") {
 					cov_fct_shape = pars[4];
 					start_dim = 1;
+					dist_funct = 2;
 				}
 				else {
 					cov_fct_shape = re_comp->CovFunctionShape();
-				}
-				int dist_funct = 0;
-				if (dist_function == "correlation_Vecchia") {
-					dist_funct = 2;
-				}
-				else if (dist_function == "residual_correlation_FSA") {
 					dist_funct = 1;
 				}
 				int cov_fct_shape_int = (int)(cov_fct_shape * 10);

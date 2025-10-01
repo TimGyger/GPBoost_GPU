@@ -126,7 +126,7 @@ namespace GPBoost {
         double corr_diag_i = corr_diag[i];
         // each thread checks candidates j < i
         for (int j = tid; j < i; j += blockDim.x) {
-            
+            const double* __restrict__ col_j = chol_ip_cross_cov + j * num_ip;
             const double* __restrict__ coord_j_ptr = coords + j * d;
             double sum = 0.0;
             for (int dd = start_dim; dd < d; dd++) {
@@ -137,11 +137,10 @@ namespace GPBoost {
             double range_dist = 0.;
             double var = pars[0];
             double dot = 0.0;
+            for (int dd = 0; dd < num_ip; dd++) {
+                dot = fma(col_j[dd], col_i[dd], dot);
+            }
             if (dist_funct == 1) {
-                const double* __restrict__ col_j = chol_ip_cross_cov + j * num_ip;
-                for (int dd = 0; dd < num_ip; dd++) {
-                    dot = fma(col_j[dd], col_i[dd], dot);
-                }
                 range_dist = range / inv_r;
             }
             else if (dist_funct == 2) {
