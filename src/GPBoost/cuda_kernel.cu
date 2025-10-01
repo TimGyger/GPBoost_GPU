@@ -146,8 +146,8 @@ namespace GPBoost {
                 range_dist = range / inv_r;
             }
             else if (dist_funct == 2) {
-                double dist_time_log = log(fabs(col_j[0] - col_i[0]));
-                double d_aux_time_log = log(pars[1] * exp(dist_time_log * 2 * pars[3]) + 1.);
+                double dt = fabs(col_j[0] - col_i[0]);
+                double d_aux_time_log =  (dt < EPSILON_NUMBERS) ? 0. : log(pars[1] * exp(log(dt) * 2 * pars[3]) + 1.);
                 range_dist = pars[2] / (exp(d_aux_time_log * pars[5] * 0.5) * inv_r);
                 var = pars[0] / (exp(d_aux_time_log * (pars[6] + pars[5] * (d - 1) * 0.5)));
             }
