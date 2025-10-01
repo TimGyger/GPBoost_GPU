@@ -106,7 +106,7 @@ namespace GPBoost {
 
 	void solve_lower_triangular(const chol_den_mat_t& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use) {
 		if (!GPU_use) {
-			Log::REInfo("[Fallback] Forced Eigen matrix-multiplication.");
+			Log::REInfo("[Fallback] Forced Eigen triangular solve.");
 			TriangularSolveGivenCholesky<chol_den_mat_t, den_mat_t, den_mat_t, den_mat_t>(chol,
 				R_host, X_host, false);
 			return;
@@ -114,7 +114,7 @@ namespace GPBoost {
 		int device_count = 0;
 		cudaError_t err = cudaGetDeviceCount(&device_count);
 		if (err != cudaSuccess || device_count == 0) {
-			Log::REInfo("[Fallback] No CUDA devices found. Using Eigen for matrix-multiplication.");
+			Log::REInfo("[Fallback] No CUDA devices found. Using Eigen for triangular solve.");
 			TriangularSolveGivenCholesky<chol_den_mat_t, den_mat_t, den_mat_t, den_mat_t>(chol,
 				R_host, X_host, false);
 			GPU_use = false;
@@ -122,7 +122,7 @@ namespace GPBoost {
 		}
 
 		if (!try_solve_lower_triangular_gpu(chol, R_host, X_host)) {
-			Log::REInfo("[Fallback] Error in computation on GPU. Using Eigen for matrix-multiplication.");
+			Log::REInfo("[Fallback] Error in computation on GPU. Using Eigen for triangular solve.");
 			TriangularSolveGivenCholesky<chol_den_mat_t, den_mat_t, den_mat_t, den_mat_t>(chol,
 				R_host, X_host, false);
 		}
@@ -132,21 +132,21 @@ namespace GPBoost {
 
 	void solve_linear_sys(const chol_den_mat_t& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use) {
 		if (!GPU_use) {
-			Log::REInfo("[Fallback] Forced Eigen matrix-multiplication.");
+			Log::REInfo("[Fallback] Forced Eigen linear solve.");
 			X_host = chol.solve(R_host);
 			return;
 		}
 		int device_count = 0;
 		cudaError_t err = cudaGetDeviceCount(&device_count);
 		if (err != cudaSuccess || device_count == 0) {
-			Log::REInfo("[Fallback] No CUDA devices found. Using Eigen for matrix-multiplication.");
+			Log::REInfo("[Fallback] No CUDA devices found. Using Eigen for linear solve.");
 			X_host = chol.solve(R_host);
 			GPU_use = false;
 			return;
 		}
 
 		if (!try_solve_cholesky_gpu(chol, R_host, X_host)) {
-			Log::REInfo("[Fallback] Error in computation on GPU. Using Eigen for matrix-multiplication.");
+			Log::REInfo("[Fallback] Error in computation on GPU. Using Eigen for linear solve.");
 			X_host = chol.solve(R_host);
 		}
 	}

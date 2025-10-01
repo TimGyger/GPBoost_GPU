@@ -134,7 +134,7 @@ namespace GPBoost {
                 double diff = coord_j_ptr[dd] - coord_i_ptr[dd];
                 sum = fma(diff, diff, sum);
             }
-            double inv_r = rsqrt(sum + EPSILON_NUMBERS);
+            double inv_r = rsqrt(sum);
             double range_dist = 0.;
             double var = pars[0];
             double dot = 0.0;
