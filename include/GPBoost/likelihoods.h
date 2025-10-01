@@ -4106,7 +4106,8 @@ namespace GPBoost {
 			const chol_den_mat_t chol_fact_sigma_ip,
 			data_size_t cluster_i,
 			REModelTemplate<T_mat, T_chol>* re_model,
-			const std::vector<int>& estimate_cov_par_index) {
+			const std::vector<int>& estimate_cov_par_index,
+			bool GPU_use) {
 			if (calc_mode) {// Calculate mode and Cholesky factor of Sigma^-1 + W at mode
 				double mll;//approximate marginal likelihood. This is a by-product that is not used here.
 				FindModePostRandEffCalcMLLVecchia(y_data, y_data_int, fixed_effects, B, D_inv, false, Sigma_L_k_, true, mll,
@@ -4148,13 +4149,13 @@ namespace GPBoost {
 					deriv_information_diag_loc_par_all.segment(0, dim_mode_per_set_re_) = deriv_information_diag_loc_par;
 					vec_t d_log_det_Sigma_W_plus_I_d_mode_temp;
 					CalcLogDetStochDerivModeVecchia(deriv_information_diag_loc_par_all, dim_mode_, d_log_det_Sigma_W_plus_I_d_mode_temp, D_inv_plus_W_inv_diag, diag_WI,
-						PI_Z, WI_PI_Z, WI_WI_plus_Sigma_inv_Z, re_comps_cross_cov_cluster_i);
+						PI_Z, WI_PI_Z, WI_WI_plus_Sigma_inv_Z, re_comps_cross_cov_cluster_i, GPU_use);
 					d_log_det_Sigma_W_plus_I_d_mode = vec_t::Zero(dim_mode_);
 					d_log_det_Sigma_W_plus_I_d_mode.segment(dim_mode_per_set_re_, dim_mode_per_set_re_) = d_log_det_Sigma_W_plus_I_d_mode_temp;
 				}
 				else {
 					CalcLogDetStochDerivModeVecchia(deriv_information_diag_loc_par, dim_mode_, d_log_det_Sigma_W_plus_I_d_mode, D_inv_plus_W_inv_diag, diag_WI, PI_Z, WI_PI_Z,
-						WI_WI_plus_Sigma_inv_Z, re_comps_cross_cov_cluster_i);
+						WI_WI_plus_Sigma_inv_Z, re_comps_cross_cov_cluster_i, GPU_use);
 				}
 				//For implicit derivatives: calculate (Sigma^(-1) + W)^(-1) d_mll_d_mode
 				if (grad_information_wrt_mode_non_zero_) {
@@ -4182,9 +4183,14 @@ namespace GPBoost {
 										SigmaI_deriv_rm = -B_rm_.transpose() * B_t_D_inv_rm_.transpose();//SigmaI_deriv = -SigmaI for variance parameters if there is only one GP
 									}
 									else {
-										SigmaI_deriv_rm = sp_mat_rm_t(B_grad[0][j].transpose()) * B_t_D_inv_rm_.transpose();
+										//SigmaI_deriv_rm = sp_mat_rm_t(B_grad[ipar].transpose()) * B_t_D_inv_rm_.transpose();
+										sp_mat_rm_t B_t_D_inv_rm_t = sp_mat_rm_t(B_t_D_inv_rm_.transpose());
+										GPBoost::spmatmul(sp_mat_rm_t(B_grad[ipar].transpose()), B_t_D_inv_rm_t, SigmaI_deriv_rm, GPU_use);
 										Bt_Dinv_Bgrad_rm = SigmaI_deriv_rm.transpose();
-										B_t_D_inv_D_grad_D_inv_B_rm = B_t_D_inv_rm_ * sp_mat_rm_t(D_grad[0][j]) * B_t_D_inv_rm_.transpose();
+										//B_t_D_inv_D_grad_D_inv_B_rm = B_t_D_inv_rm_ * sp_mat_rm_t(D_grad[ipar]) * B_t_D_inv_rm_.transpose();
+										sp_mat_rm_t B_t_D_inv_D_grad_D_inv_B_rm_inter;
+										GPBoost::spmatmul(sp_mat_rm_t(D_grad[ipar]), B_t_D_inv_rm_t, B_t_D_inv_D_grad_D_inv_B_rm_inter, GPU_use);
+										GPBoost::spmatmul(B_t_D_inv_rm_, B_t_D_inv_D_grad_D_inv_B_rm_inter, B_t_D_inv_D_grad_D_inv_B_rm, GPU_use);
 										SigmaI_deriv_rm += Bt_Dinv_Bgrad_rm - B_t_D_inv_D_grad_D_inv_B_rm;
 										Bt_Dinv_Bgrad_rm.resize(0, 0);
 									}
@@ -4244,7 +4250,7 @@ namespace GPBoost {
 						vec_t diag_WI_dummy, D_inv_plus_W_inv_dia_dummy;
 						den_mat_t PI_Z_dummy, WI_PI_Z_dummy, WI_WI_plus_Sigma_inv_Z_dummy;
 						CalcLogDetStochDerivModeVecchia(ones, dim_mode_, SigmaI_plus_W_inv_diag, D_inv_plus_W_inv_dia_dummy, diag_WI_dummy, PI_Z_dummy, WI_PI_Z_dummy,
-							WI_WI_plus_Sigma_inv_Z_dummy, re_comps_cross_cov_cluster_i);
+							WI_WI_plus_Sigma_inv_Z_dummy, re_comps_cross_cov_cluster_i, GPU_use);
 					}
 					else {
 						CHECK(num_sets_re_ == 1);
