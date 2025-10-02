@@ -70,13 +70,13 @@ namespace GPBoost {
 			coords_i = coords(coord_ind_i, Eigen::all);
 			coords_j = coords(coords_ind_j, Eigen::all);
 			den_mat_t dist_ij;
-			//if (!distances_saved) {
-			//	dist_ij.resize(coords_ind_j.size(), 1);
-//#pragma omp parallel for schedule(static)
-//				for (int j = 0; j < (int)coords_ind_j.size(); j++) {
-//					dist_ij.coeffRef(j, 0) = (coords_j(j, Eigen::all) - coords_i).lpNorm<2>();
-//				}
-//			}
+			if (!distances_saved) {
+				dist_ij.resize(coords_ind_j.size(), 1);
+#pragma omp parallel for schedule(static)
+				for (int j = 0; j < (int)coords_ind_j.size(); j++) {
+					dist_ij.coeffRef(j, 0) = (coords_j(j, Eigen::all) - coords_i).lpNorm<2>();
+				}
+			}
 			std::vector<int> calc_grad_index_dummy;
 			re_comps_vecchia_cluster_i[0]->CalcSigmaAndSigmaGradVecchia(dist_ij, coords_i, coords_j,
 				corr_mat, dummy_mat_grad.data(), false, true, 1., false, calc_grad_index_dummy);
@@ -324,6 +324,7 @@ namespace GPBoost {
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 		string_t dist_function = "residual_correlation_FSA";
 		if (chol_ip_cross_cov.size() == 0) {
+			Log::REInfo("Test11");
 			dist_function = "correlation_Vecchia";
 		}
 		CHECK((int)neighbors.size() == (num_data - start_at));
