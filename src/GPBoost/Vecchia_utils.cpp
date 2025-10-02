@@ -522,16 +522,21 @@ namespace GPBoost {
 						}
 						Log::REInfo("Test3.1 %i", num_threads);
 						std::this_thread::sleep_for(std::chrono::seconds(1));
-#pragma omp parallel for
+//#pragma omp parallel for
 						for (int i = 0; i < num_threads; ++i) {
-							Log::REInfo("Test3.2 %i", i);
-							std::this_thread::sleep_for(std::chrono::seconds(1));
+							
 							segment_start[i] = i * segment_size;
 							segment_length[i] = segment_size;
 							if (i == num_threads - 1 && overhead) {
 								segment_length[i] += last_segment;
 							}
-							CoverTree_kNN(coords_ct.middleRows(segment_start[i], segment_length[i]), chol_ip_cross_cov.middleCols(segment_start[i], segment_length[i]),
+							Log::REInfo("Test3.2 %i %i %i", i, segment_start[i], segment_length[i]);
+							std::this_thread::sleep_for(std::chrono::seconds(1));
+							den_mat_t chol_ip_cross_cov_sub;
+							if (dist_function == "residual_correlation_FSA") {
+								chol_ip_cross_cov_sub = chol_ip_cross_cov.middleCols(segment_start[i], segment_length[i]);
+							}
+							CoverTree_kNN(coords_ct.middleRows(segment_start[i], segment_length[i]), chol_ip_cross_cov_sub,
 								corr_diag.segment(segment_start[i], segment_length[i]), segment_start[i], re_comps_vecchia_cluster_i, cover_trees[i],
 								levels_threads[i], save_distances, dist_function);
 						}
