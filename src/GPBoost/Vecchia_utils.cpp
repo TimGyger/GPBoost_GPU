@@ -520,8 +520,12 @@ namespace GPBoost {
 							segment_length.resize(num_threads);
 							overhead = true;
 						}
+						Log::REInfo("Test3.1 %i", num_threads);
+						std::this_thread::sleep_for(std::chrono::seconds(1));
 #pragma omp parallel for
 						for (int i = 0; i < num_threads; ++i) {
+							Log::REInfo("Test3.2 %i", i);
+							std::this_thread::sleep_for(std::chrono::seconds(0.1));
 							segment_start[i] = i * segment_size;
 							segment_length[i] = segment_size;
 							if (i == num_threads - 1 && overhead) {
