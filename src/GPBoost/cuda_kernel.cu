@@ -261,6 +261,7 @@ namespace GPBoost {
         int threads = 128;
         int blocks = total_threads;   // one block per query point
         size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
+        Log::REInfo("T %i", (int)chol_ip_cross_cov.rows());
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
             d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
