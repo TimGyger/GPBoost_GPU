@@ -6,8 +6,6 @@
 *
 * Licensed under the Apache License Version 2.0. See LICENSE file in the project root for license information.
 */
-#include <thread>
-#include <chrono>
 #include <GPBoost/Vecchia_utils.h>
 #include <GPBoost/utils.h>
 #include <GPBoost/GP_utils.h>
@@ -320,8 +318,6 @@ namespace GPBoost {
 		bool cond_on_all,
 		const int& num_data_obs,
 		bool GPU_use) {
-		Log::REInfo("Test1");
-		std::this_thread::sleep_for(std::chrono::seconds(1));
 		string_t dist_function = "residual_correlation_FSA";
 		if (chol_ip_cross_cov.size() == 0) {
 			Log::REInfo("Test11");
@@ -363,8 +359,6 @@ namespace GPBoost {
 				corr_diag[i] -= (double)chol_ip_cross_cov.col(i).array().square().sum();
 			}
 		}
-		Log::REInfo("Test2");
-		std::this_thread::sleep_for(std::chrono::seconds(1));
 		//Intialize neighbor vectors
 		for (int i = start_at; i < num_data; ++i) {
 			if (i > 0 && i <= num_neighbors) {
@@ -503,8 +497,6 @@ namespace GPBoost {
 					for (int i = 0; i < num_threads; ++i) {
 						cover_trees[i] = cover_tree;
 					}
-					Log::REInfo("Test3");
-					std::this_thread::sleep_for(std::chrono::seconds(1));
 					if (num_threads != 1) {
 						int segment_size = (int)(std::ceil((double)coords_ct.rows() / (double)num_threads));
 						if (segment_size < std::max(1000, num_neighbors)) {
@@ -520,9 +512,7 @@ namespace GPBoost {
 							segment_length.resize(num_threads);
 							overhead = true;
 						}
-						Log::REInfo("Test3.1 %i", num_threads);
-						std::this_thread::sleep_for(std::chrono::seconds(1));
-//#pragma omp parallel for
+#pragma omp parallel for
 						for (int i = 0; i < num_threads; ++i) {
 							
 							segment_start[i] = i * segment_size;
@@ -530,8 +520,6 @@ namespace GPBoost {
 							if (i == num_threads - 1 && overhead) {
 								segment_length[i] += last_segment;
 							}
-							Log::REInfo("Test3.2 %i %i %i", i, segment_start[i], segment_length[i]);
-							std::this_thread::sleep_for(std::chrono::seconds(1));
 							den_mat_t chol_ip_cross_cov_sub;
 							if (dist_function == "residual_correlation_FSA") {
 								chol_ip_cross_cov_sub = chol_ip_cross_cov.middleCols(segment_start[i], segment_length[i]);
@@ -545,8 +533,6 @@ namespace GPBoost {
 						CoverTree_kNN(coords_ct, chol_ip_cross_cov, corr_diag, 0, re_comps_vecchia_cluster_i, cover_trees[0],
 							level, save_distances, dist_function);
 					}
-					Log::REInfo("Test4");
-					std::this_thread::sleep_for(std::chrono::seconds(1));
 #pragma omp parallel for schedule(dynamic)
 					for (int i = brute_force_threshold; i < num_data; ++i) {
 						if (num_threads != 1) {
@@ -633,8 +619,6 @@ namespace GPBoost {
 				}
 			}
 		}
-		Log::REInfo("Test4");
-		std::this_thread::sleep_for(std::chrono::seconds(1));
 		// Calculate distances among neighbors
 		int first_i = (start_at == 0) ? 1 : start_at;
 #pragma omp parallel for schedule(static)
@@ -684,8 +668,6 @@ namespace GPBoost {
 		if (check_has_duplicates) {
 			check_has_duplicates = has_duplicates;
 		}
-		Log::REInfo("Test5");
-		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}//end find_nearest_neighbors_Vecchia_FSA_fast
 
 	void find_nearest_neighbors_Vecchia(den_mat_t& dist,
