@@ -29,9 +29,6 @@ using LightGBM::Log;
 // Maximum neighbor size per data point
 #define MAX_K 64
 
-// Maximum number of GP parameters
-#define MAX_NUM_PAR_GP 16
-
 
 namespace GPBoost {
 
@@ -233,7 +230,7 @@ namespace GPBoost {
         std::vector<std::vector<int>>& neighbors,
         int start_dim
     ) {
-
+        if (num_neighbors > MAX_K) return false;
         // --- prepare sizes ---
         int total_threads = num_data - start_at;
 
@@ -261,7 +258,6 @@ namespace GPBoost {
         int threads = 128;
         int blocks = total_threads;   // one block per query point
         size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
-        Log::REInfo("T %i", (int)chol_ip_cross_cov.rows());
         knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
             d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
@@ -566,7 +562,6 @@ namespace GPBoost {
     bool try_matmul_gpu(const den_mat_t& A, const den_mat_t& B, den_mat_t& C) {
         int M = A.rows(), K = A.cols(), N = B.cols();
         if (K != B.rows()) {
-            Log::REInfo("[GPU] Dimension mismatch.");
             return false;
         }
 
@@ -635,7 +630,7 @@ namespace GPBoost {
         cublasDestroy(handle);
         cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
 
-        Log::REInfo("[GPU] Matrix multiplication completed with cuBLAS.");
+        //Log::REInfo("[GPU] Matrix multiplication completed with cuBLAS.");
         return true;
     }
 
@@ -809,7 +804,7 @@ namespace GPBoost {
         cudaFree(d_X);
         cublasDestroy(handle);
 
-        Log::REInfo("[GPU] Triangular solve with CUBLAS.");
+        //Log::REInfo("[GPU] Triangular solve with CUBLAS.");
         return true;
     }
 
@@ -890,7 +885,7 @@ namespace GPBoost {
         cudaFree(d_X);
         cublasDestroy(handle);
 
-        Log::REInfo("[GPU] Full Cholesky solve (Sigma^-1 * R) with cuBLAS.");
+        //Log::REInfo("[GPU] Full Cholesky solve (Sigma^-1 * R) with cuBLAS.");
         return true;
     }
 

@@ -60,7 +60,7 @@ namespace GPBoost {
 
 	void matmul(const den_mat_t& A, const den_mat_t& B, den_mat_t& C, bool GPU_use) {
 		if (!GPU_use) {
-			Log::REInfo("[Fallback] Forced Eigen matrix-multiplication.");
+			//Log::REInfo("[Fallback] Forced Eigen matrix-multiplication.");
 			C = A * B;
 			return;
 		}
@@ -83,7 +83,7 @@ namespace GPBoost {
 
 	void spmatmul(const sp_mat_rm_t& A, const sp_mat_rm_t& B, sp_mat_rm_t& C, bool GPU_use) {
 		if (!GPU_use) {
-			Log::REInfo("[Fallback] Forced Eigen matrix-multiplication.");
+			//Log::REInfo("[Fallback] Forced Eigen matrix-multiplication.");
 			C = A * B;
 			return;
 		}
@@ -106,7 +106,7 @@ namespace GPBoost {
 
 	void solve_lower_triangular(const chol_den_mat_t& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use) {
 		if (!GPU_use) {
-			Log::REInfo("[Fallback] Forced Eigen triangular solve.");
+			//Log::REInfo("[Fallback] Forced Eigen triangular solve.");
 			TriangularSolveGivenCholesky<chol_den_mat_t, den_mat_t, den_mat_t, den_mat_t>(chol,
 				R_host, X_host, false);
 			return;
@@ -132,7 +132,7 @@ namespace GPBoost {
 
 	void solve_linear_sys(const chol_den_mat_t& chol, const den_mat_t& R_host, den_mat_t& X_host, bool GPU_use) {
 		if (!GPU_use) {
-			Log::REInfo("[Fallback] Forced Eigen linear solve.");
+			//Log::REInfo("[Fallback] Forced Eigen linear solve.");
 			X_host = chol.solve(R_host);
 			return;
 		}

@@ -320,7 +320,6 @@ namespace GPBoost {
 		bool GPU_use) {
 		string_t dist_function = "residual_correlation_FSA";
 		if (chol_ip_cross_cov.size() == 0) {
-			Log::REInfo("Test11");
 			dist_function = "correlation_Vecchia";
 		}
 		CHECK((int)neighbors.size() == (num_data - start_at));
