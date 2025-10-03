@@ -259,54 +259,36 @@ namespace GPBoost {
         //int blocks = total_threads;   // one block per query point
         //size_t shmem_size = threads * num_neighbors * (sizeof(double) + sizeof(int));
 
-        // compute launch configuration dynamically (replace your three lines with this)
-        int threadsPerBlock = 128; // initial guess (will be adjusted)
-        int numBlocks;
+        int blocks = total_threads;   // one block per query point
+
+        // --- adapt threads at runtime so launches are valid on any GPU ---
         cudaDeviceProp prop;
         int dev;
         cudaGetDevice(&dev);
         cudaGetDeviceProperties(&prop, dev);
 
-        // lambda to compute shared mem needed for a given threadsPerBlock
-        auto shmemNeeded = [&](int threads) -> size_t {
-            return (size_t)threads * num_neighbors * (sizeof(double) + sizeof(int));
+        int maxThreadsPerBlock = prop.maxThreadsPerBlock;
+        size_t maxSharedPerBlock = prop.sharedMemPerBlock;
+
+        // start from the device maximum rounded down to a warp multiple
+        int threads = (maxThreadsPerBlock / 32) * 32;
+        if (threads < 32) threads = 32;
+
+        // helper to compute shared mem required by a block with `t` threads
+        auto shmemNeededForThreads = [&](int t) -> size_t {
+            return (size_t)t * num_neighbors * (sizeof(double) + sizeof(int));
             };
 
-        // ask CUDA for a suggested block size (ignore suggested shmem here)
-        int minGridSize = 0, suggestedBlockSize = 0;
-        cudaOccupancyMaxPotentialBlockSize(&minGridSize, &suggestedBlockSize,
-            (void*)knn_bruteforce_kernel, 0, 0);
-
-        // start from the suggested size if valid
-        if (suggestedBlockSize > 0) threadsPerBlock = suggestedBlockSize;
-
-        // make sure threadsPerBlock is a multiple of 32 and at least 32
-        if (threadsPerBlock < 32) threadsPerBlock = 32;
-        threadsPerBlock = (threadsPerBlock / 32) * 32;
-
-        // reduce threadsPerBlock while shared memory would be too large
-        size_t max_shmem = prop.sharedMemPerBlock;
-        while (threadsPerBlock > 32 && shmemNeeded(threadsPerBlock) > max_shmem) {
-            threadsPerBlock /= 2;
-            // ensure still multiple of 32
-            if (threadsPerBlock < 32) { threadsPerBlock = 32; break; }
-            threadsPerBlock = (threadsPerBlock / 32) * 32;
+        // reduce threads (preserving warp multiples) while shared mem would exceed device limit
+        while (threads > 32 && shmemNeededForThreads(threads) > maxSharedPerBlock) {
+            threads /= 2; // still a multiple of 32 because we started from a warp-multiple
         }
 
-        // final blocks (ceil division)
-        numBlocks = (total_threads + threadsPerBlock - 1) / threadsPerBlock;
+        // final safety check: even one warp must fit in shared memory
+        size_t shmem_size = shmemNeededForThreads(threads);
 
-        // final shared mem size for launch
-        size_t shmem_size = shmemNeeded(threadsPerBlock);
-
-        // (optional) sanity check: clamp shmem_size to device max to avoid invalid launch
-        if (shmem_size > max_shmem) {
-            // fallback: set shmem_size to max_shmem (kernel must handle this gracefully)
-            shmem_size = max_shmem;
-        }
-
-        Log::REInfo("Launch %i %i %i", numBlocks, threadsPerBlock, shmem_size);
-        knn_bruteforce_kernel << <numBlocks, threadsPerBlock, shmem_size >> > (
+        Log::REInfo("Launch %i %i %i", blocks, threads, shmem_size);
+        knn_bruteforce_kernel << <blocks, threads, shmem_size >> > (
             num_data, dim_coords, num_neighbors,
             d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
             (int)chol_ip_cross_cov.rows(), shape,
