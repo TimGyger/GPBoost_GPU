@@ -123,7 +123,7 @@ namespace GPBoost {
         const double* __restrict__ coord_i_ptr = coords + i * d;
         double corr_diag_i = corr_diag[i];
         // each thread checks candidates j < i
-        int end_at_i = min(i, end_at)
+        int end_at_i = min(i, end_at);
         for (int j = tid; j < end_at_i; j += blockDim.x) {
             const double* __restrict__ col_j = chol_ip_cross_cov + j * num_ip;
             const double* __restrict__ coord_j_ptr = coords + j * d;
