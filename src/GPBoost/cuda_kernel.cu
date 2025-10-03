@@ -98,6 +98,7 @@ namespace GPBoost {
         int dist_funct,
         int* knn_idx,   // [n * k], output
         int start_at,
+        int end_at,
         int start_dim
     ) {
 
@@ -122,7 +123,8 @@ namespace GPBoost {
         const double* __restrict__ coord_i_ptr = coords + i * d;
         double corr_diag_i = corr_diag[i];
         // each thread checks candidates j < i
-        for (int j = tid; j < i; j += blockDim.x) {
+        int end_at_i = min(i, end_at)
+        for (int j = tid; j < end_at_i; j += blockDim.x) {
             const double* __restrict__ col_j = chol_ip_cross_cov + j * num_ip;
             const double* __restrict__ coord_j_ptr = coords + j * d;
             double sum = 0.0;
@@ -220,6 +222,8 @@ namespace GPBoost {
         int num_neighbors,
         const vec_t& pars,
         int start_at,
+        int brute_force_threshold,
+        int end_at,
         int dim_coords,
         const vec_t& corr_diag,
         const den_mat_t& chol_ip_cross_cov,
@@ -232,7 +236,7 @@ namespace GPBoost {
     ) {
         if (num_neighbors > MAX_K) return false;
         // --- prepare sizes ---
-        int total_threads = num_data - start_at;
+        int total_threads = num_data - brute_force_threshold;
 
         // --- allocate device memory ---
         double* d_coords = nullptr;
@@ -293,7 +297,7 @@ namespace GPBoost {
             d_coords, d_corr_diag, d_chol_ip_cross_cov, d_pars,
             (int)chol_ip_cross_cov.rows(), shape,
             range, EPSILON_NUMBERS, dist_funct,
-            d_neighbors, start_at, start_dim
+            d_neighbors, brute_force_threshold, end_at, start_dim
             );
         cudaError_t launchErr = cudaGetLastError();
         if (launchErr != cudaSuccess) {
@@ -311,9 +315,9 @@ namespace GPBoost {
         CUDA_CHECK(cudaMemcpy(h_neighbors.data(), d_neighbors, h_neighbors.size() * sizeof(int), cudaMemcpyDeviceToHost));
         // --- fill results ---
 #pragma omp parallel for schedule(static)
-        for (int i = start_at; i < num_data; i++) {
+        for (int i = brute_force_threshold; i < num_data; i++) {
             for (int j = 0; j < num_neighbors; j++) {
-                neighbors[i][j] = h_neighbors[(i - start_at) * num_neighbors + j];
+                neighbors[i - start_at][j] = h_neighbors[(i - brute_force_threshold) * num_neighbors + j];
             }
         }
         // --- cleanup ---

@@ -45,6 +45,8 @@ namespace GPBoost {
 		int num_neighbors,
 		const vec_t& pars,
 		int start_at,
+		int brute_force_threshold,
+		int end_at,
 		int dim_coords,
 		const vec_t& corr_diag,
 		const den_mat_t& chol_ip_cross_cov,

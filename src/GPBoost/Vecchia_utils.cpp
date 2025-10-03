@@ -457,7 +457,7 @@ namespace GPBoost {
 				if ((TwoNumbersAreEqual<double>(cov_fct_shape, 0.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 1.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) && dist_funct != 0) {
 #ifdef USE_CUDA_GP
 					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors, pars,
-						brute_force_threshold, (int)coords.cols(), corr_diag, chol_ip_cross_cov,
+						start_at, brute_force_threshold, end_search_at, (int)coords.cols(), corr_diag, chol_ip_cross_cov,
 						cov_fct_shape_int, range_param, EPSILON_NUMBERS, dist_funct, neighbors, start_dim);
 #endif 
 				}
