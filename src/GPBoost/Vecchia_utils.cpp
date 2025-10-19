@@ -468,6 +468,7 @@ namespace GPBoost {
 						prediction, cond_on_all, num_data_obs, false);
 					return;
 				}
+				Log::REInfo("Test1");
 			}
 			else {
 				if (brute_force_threshold < num_data) {
@@ -618,6 +619,7 @@ namespace GPBoost {
 				}
 			}
 		}
+		Log::REInfo("Test2");
 		// Calculate distances among neighbors
 		int first_i = (start_at == 0) ? 1 : start_at;
 #pragma omp parallel for schedule(static)
@@ -667,6 +669,7 @@ namespace GPBoost {
 		if (check_has_duplicates) {
 			check_has_duplicates = has_duplicates;
 		}
+		Log::REInfo("Test3");
 	}//end find_nearest_neighbors_Vecchia_FSA_fast
 
 	void find_nearest_neighbors_Vecchia(den_mat_t& dist,
@@ -1164,6 +1167,7 @@ namespace GPBoost {
 		std::vector<den_mat_t>& dist_between_neighbors_cluster_i,
 		bool save_distances_isotropic_cov_fct,
 		bool GPU_use) {
+		Log::REInfo("Test4");
 		std::shared_ptr<RECompGP<den_mat_t>> re_comp = re_comps_vecchia_cluster_i[ind_intercept_gp];
 		CHECK(re_comp->RedetermineVecchiaNeighborsInducingPoints() || vecchia_neighbor_selection == "residual_correlation" || vecchia_neighbor_selection == "correlation");
 		int num_re = re_comp->GetNumUniqueREs();
@@ -1185,6 +1189,7 @@ namespace GPBoost {
 				nearest_neighbors_cluster_i, dist_dummy, dist_dummy, 0, -1, has_duplicates,
 				vecchia_neighbor_selection, rng, false, GPU_use);
 		}
+		Log::REInfo("Test5");
 		if (check_has_duplicates) {
 			has_duplicates_coords = has_duplicates_coords || has_duplicates;
 			if (!gauss_likelihood && has_duplicates_coords) {
@@ -1222,6 +1227,7 @@ namespace GPBoost {
 				}
 			}
 		}
+		Log::REInfo("Test6");
 	}//end UpdateNearestNeighbors
 
 	void CalcCovFactorGradientVecchia(data_size_t num_re_cluster_i,
@@ -1253,7 +1259,6 @@ namespace GPBoost {
 		string_t& gp_approx,
 		const double* add_diagonal,
 		const std::vector<int>& estimate_cov_par_index) {
-		Log::REInfo("Test1");
 		int num_par_comp = re_comps_vecchia_cluster_i[ind_intercept_gp]->NumCovPar();
 		int num_par_gp = num_par_comp * num_gp_total + calc_gradient_nugget;
 		int nugget_offset_ind_est = (gauss_likelihood && !calc_gradient_nugget) ? 1 : 0;
@@ -1299,10 +1304,6 @@ namespace GPBoost {
 		// Components for full scale vecchia
 		std::vector<den_mat_t> sigma_cross_cov_gradT((int)num_par_comp);
 		std::vector<den_mat_t> sigma_ip_grad((int)num_par_comp);
-		Log::REInfo("Test2");
-		if (distances_saved) {
-			Log::REInfo("Test3");
-		}
 		if (gp_approx == "full_scale_vecchia") {
 			const den_mat_t* sigma_cross_cov = re_comps_cross_cov_cluster_i[0]->GetSigmaPtr();
 			if (calc_gradient) {
@@ -1538,7 +1539,6 @@ namespace GPBoost {
 				}
 			}
 		}
-		Log::REInfo("Test4");
 	}//end CalcCovFactorGradientVecchia
 
 	void CalcPredVecchiaObservedFirstOrder(bool CondObsOnly,
