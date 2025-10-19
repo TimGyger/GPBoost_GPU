@@ -4505,6 +4505,7 @@ namespace GPBoost {
 		* \param force_redermination If true, inducing points/neighbors are redetermined if applicaple irrespective of num_iter_
 		*/
 		void RedetermineNearestNeighborsVecchiaInducingPointsFITC(bool force_redermination) {
+			Log::REInfo("Testa");
 			CHECK(ShouldRedetermineNearestNeighborsVecchiaInducingPointsFITC(force_redermination));
 			if (gp_approx_ == "full_scale_vecchia" || gp_approx_ == "fitc" || gp_approx_ == "full_scale_tapering") {
 				int num_ind_points = num_ind_points_;
@@ -4789,6 +4790,7 @@ namespace GPBoost {
 					Log::REDebug("Inducing points for preconditioner redetermined after iteration number %d ", num_iter_ + 1);
 				}
 			}
+			Log::REInfo("Testb");
 		}//end RedetermineNearestNeighborsVecchiaInducingPointsFITC
 
 		/*!
@@ -8286,17 +8288,21 @@ namespace GPBoost {
 		*/
 		void CalcCovFactor(bool transf_scale,
 			double nugget_var) {
+			Log::REInfo("Test1");
 			if (gp_approx_ == "vecchia" || gp_approx_ == "full_scale_vecchia") {
 				if (gp_approx_ == "full_scale_vecchia") {
 					CalcSigmaComps();
 				}
+				Log::REInfo("Test11");
 				CalcCovFactorVecchia(transf_scale, nugget_var);
 				if (!gauss_likelihood_ && matrix_inversion_method_ == "iterative" && cg_preconditioner_type_ == "fitc") {
 					Calc_FITC_Preconditioner_Vecchia();
 				}
+				Log::REInfo("Test12");
 				if (gp_approx_ == "full_scale_vecchia" && !gauss_likelihood_) {
 					CalcCovFactorFITC_FSA();
 				}
+				Log::REInfo("Test13");
 			}
 			if (gp_approx_ != "vecchia") {
 				if (gp_approx_ != "full_scale_vecchia") {
@@ -8376,6 +8382,7 @@ namespace GPBoost {
 				covariance_matrix_has_been_factorized_ = true;
 				num_ll_evaluations_++;//note: for non-Gaussian likelihoods, a call to 'CalcModePostRandEffCalcMLL' (=finding the mode for the Laplace approximation) is counted as a likelihood evaluation
 			}
+			Log::REInfo("Test2");
 		}//end CalcCovFactor
 
 		/*!
@@ -8530,6 +8537,7 @@ namespace GPBoost {
 		* \brief Calculate cholesky factor of Woodbury matrix for fitc and full scale approximations
 		*/
 		void CalcCovFactorFITC_FSA() {
+			Log::REInfo("Test10");
 			for (const auto& cluster_i : unique_clusters_) {
 				// factorize matrix used in Woodbury identity
 				if (matrix_inversion_method_ == "iterative") {
@@ -8637,6 +8645,7 @@ namespace GPBoost {
 					Log::REFatal("Matrix inversion method '%s' is not supported.", matrix_inversion_method_.c_str());
 				}
 			}
+			Log::REInfo("Test101");
 		}//end CalcCovFactorFITC_FSA
 
 		/*!
