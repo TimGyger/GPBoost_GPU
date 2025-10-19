@@ -1253,6 +1253,7 @@ namespace GPBoost {
 		string_t& gp_approx,
 		const double* add_diagonal,
 		const std::vector<int>& estimate_cov_par_index) {
+		Log::REInfo("Test1");
 		int num_par_comp = re_comps_vecchia_cluster_i[ind_intercept_gp]->NumCovPar();
 		int num_par_gp = num_par_comp * num_gp_total + calc_gradient_nugget;
 		int nugget_offset_ind_est = (gauss_likelihood && !calc_gradient_nugget) ? 1 : 0;
@@ -1298,6 +1299,10 @@ namespace GPBoost {
 		// Components for full scale vecchia
 		std::vector<den_mat_t> sigma_cross_cov_gradT((int)num_par_comp);
 		std::vector<den_mat_t> sigma_ip_grad((int)num_par_comp);
+		Log::REInfo("Test2");
+		if (distances_saved) {
+			Log::REInfo("Test3");
+		}
 		if (gp_approx == "full_scale_vecchia") {
 			const den_mat_t* sigma_cross_cov = re_comps_cross_cov_cluster_i[0]->GetSigmaPtr();
 			if (calc_gradient) {
@@ -1533,6 +1538,7 @@ namespace GPBoost {
 				}
 			}
 		}
+		Log::REInfo("Test4");
 	}//end CalcCovFactorGradientVecchia
 
 	void CalcPredVecchiaObservedFirstOrder(bool CondObsOnly,
