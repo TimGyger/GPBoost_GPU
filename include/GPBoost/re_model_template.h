@@ -4523,6 +4523,7 @@ namespace GPBoost {
 						den_mat_t gp_coords_all_unique;
 						std::vector<int> uniques;//unique points
 						std::vector<int> unique_idx;//not used
+						Log::REInfo("Testba");
 						DetermineUniqueDuplicateCoordsFast(coords_scaled, num_data_per_cluster_[cluster_i], uniques, unique_idx);
 						if ((data_size_t)uniques.size() == num_data_per_cluster_[cluster_i]) {//no multiple observations at the same locations -> no incidence matrix needed
 							gp_coords_all_unique = coords_scaled;
@@ -4581,6 +4582,7 @@ namespace GPBoost {
 							Log::REFatal("Method '%s' is not supported for redetrmine inducing points. Use '%s' when using an ard kernel/covariance-function! ",
 								ind_points_selection_.c_str(), "kmeans++");
 						}
+						Log::REInfo("Testaa");
 						den_mat_t coords_ip_rescaled;
 						vec_t pars_inv = pars.cwiseInverse();
 						re_comp->ScaleCoordinates(pars_inv, gp_coords_ip_mat, coords_ip_rescaled);
@@ -4627,6 +4629,7 @@ namespace GPBoost {
 					}
 				}
 			}
+			Log::REInfo("Testa1");
 			if (gp_approx_ == "vecchia" || gp_approx_ == "full_scale_vecchia") {
 				for (const auto& cluster_i : unique_clusters_) {
 					for (int igp = 0; igp < num_sets_re_; ++igp) {
@@ -4645,6 +4648,7 @@ namespace GPBoost {
 					Log::REDebug("Nearest neighbors redetermined after iteration number %d ", num_iter_ + 1);
 				}
 			}
+			Log::REInfo("Testa2");
 			if (cg_preconditioner_type_ == "fitc" && matrix_inversion_method_ == "iterative") {
 				if (gp_approx_ == "fitc" || ((gp_approx_ == "vecchia" || gp_approx_ == "full_scale_vecchia") && (gauss_likelihood_ && !vecchia_latent_approx_gaussian_))) {
 					Log::REFatal("'iterative' methods are not implemented for gp_approx = '%s'. Use 'cholesky' ", gp_approx_.c_str());
@@ -4659,6 +4663,7 @@ namespace GPBoost {
 					}
 				}
 				else {
+					Log::REInfo("Testa3");
 					for (const auto& cluster_i : unique_clusters_) {
 						std::vector<std::shared_ptr<RECompGP<den_mat_t>>> re_comps_ip_cluster_i;
 						std::vector<std::shared_ptr<RECompGP<den_mat_t>>> re_comps_cross_cov_cluster_i;
@@ -4746,6 +4751,7 @@ namespace GPBoost {
 							Log::REFatal("Method '%s' is not supported for redetrmine inducing points. Use '%s' when using an ard kernel/covariance-function! ",
 								ind_points_selection_.c_str(), "kmeans++");
 						}
+						Log::REInfo("Testa4");
 						den_mat_t coords_ip_rescaled;
 						// Start with inducing points from last redetermination
 						if (re_comp->UseScaledCoordinates()) {
@@ -4768,6 +4774,7 @@ namespace GPBoost {
 							only_one_GP_calculations_on_RE_scale_ = false;
 							has_duplicates_coords_ = only_one_GP_calculations_on_RE_scale_;
 						}
+						Log::REInfo("Testb1");
 						re_comps_cross_cov_cluster_i.push_back(std::shared_ptr<RECompGP<den_mat_t>>(new RECompGP<den_mat_t>(
 							coords_all, coords_ip_rescaled, re_comp->CovFunctionName(), re_comp->CovFunctionShape(), re_comp->CovFunctionTaperRange(), re_comp->CovFunctionTaperShape(), false, false, only_one_GP_calculations_on_RE_scale_)));
 						re_comps_ip_preconditioner_[cluster_i][0] = re_comps_ip_cluster_i;
@@ -4775,10 +4782,13 @@ namespace GPBoost {
 						re_comps_ip_cluster_i[0]->SetCovPars(pars);
 						re_comps_cross_cov_cluster_i[0]->SetCovPars(pars);
 						re_comps_ip_cluster_i[0]->CalcSigma();
+						Log::REInfo("Testb2");
 						re_comps_cross_cov_cluster_i[0]->CalcSigma();
+						Log::REInfo("Testb3");
 						den_mat_t sigma_ip_stable = *(re_comps_ip_cluster_i[0]->GetZSigmaZt());
 						sigma_ip_stable.diagonal().array() *= JITTER_MULT_IP_FITC_FSA;
 						chol_fact_sigma_ip_preconditioner_[cluster_i][0].compute(sigma_ip_stable);
+						Log::REInfo("Testb1");
 						//TriangularSolveGivenCholesky<chol_den_mat_t, den_mat_t, den_mat_t, den_mat_t>(chol_fact_sigma_ip_preconditioner_[cluster_i][0],
 						//	(*(re_comps_cross_cov_cluster_i[0]->GetZSigmaZt())).transpose(), chol_ip_cross_cov_preconditioner_[cluster_i][0], false);
 						GPBoost::solve_lower_triangular(chol_fact_sigma_ip_preconditioner_[cluster_i][0],
