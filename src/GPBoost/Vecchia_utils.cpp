@@ -828,7 +828,7 @@ namespace GPBoost {
 					}
 					bool success = false;
 					vec_t corr_diag, pars;
-					int num_neighbors, cov_fct_shape_int;
+					int cov_fct_shape_int;
 					den_mat_t chol_ip_cross_cov;
 					double range_param;
 #ifdef USE_CUDA_GP
