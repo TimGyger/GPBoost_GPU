@@ -828,9 +828,9 @@ namespace GPBoost {
 					}
 					bool success = false;
 					vec_t corr_diag, pars;
-					int cov_fct_shape_int;
 					den_mat_t chol_ip_cross_cov;
-					double range_param;
+					chol_ip_cross_cov.resize(0, 0);
+					corr_diag.resize(0);
 #ifdef USE_CUDA_GP
 					//success = find_nearest_neighbors_Vecchia_fast_GPU(coords, num_data, num_neighbors, num_close_neighbors,
 					//	start_at, end_search_at, dim_coords, sort_sum, sort_inv_sum, coords_sum, neighbors, dist_obs_neighbors, save_distances, has_duplicates,
@@ -838,7 +838,7 @@ namespace GPBoost {
 
 					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors, pars,
 						start_at, brute_force_threshold, end_search_at, (int)coords.cols(), corr_diag, chol_ip_cross_cov,
-						cov_fct_shape_int, range_param, EPSILON_NUMBERS, 3, neighbors, 0);
+						0, 0., EPSILON_NUMBERS, 3, neighbors, 0);
 #endif 
 					if (!success) {
 						Log::REInfo("GPU neighbor search failed! Restart on CPU!");

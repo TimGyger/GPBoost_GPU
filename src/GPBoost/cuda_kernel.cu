@@ -137,7 +137,10 @@ namespace GPBoost {
             }
             double inv_r = rsqrt(sum);
             double range_dist = 0.;
-            double var = pars[0];
+            double var;
+            if (dist_funct != 3) {
+                var = pars[0];
+            }
             double dot = 0.0;
             for (int dd = 0; dd < num_ip; dd++) {
                 dot = fma(col_j[dd], col_i[dd], dot);
