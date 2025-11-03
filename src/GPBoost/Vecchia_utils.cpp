@@ -800,7 +800,7 @@ namespace GPBoost {
 							nn_corr[j] = std::numeric_limits<double>::infinity();
 						}
 						for (int jj = 0; jj < (int)std::min(i, end_search_at); ++jj) {
-							dist = (coords(i, Eigen::all) - coords(jj, Eigen::all)).lpNorm<2>()
+							dist = (coords(i, Eigen::all) - coords(jj, Eigen::all)).lpNorm<2>();
 							if (dist < nn_corr[num_neighbors - 1]) {
 								nn_corr[num_neighbors - 1] = dist;
 								neighbors[i - start_at][num_neighbors - 1] = jj;

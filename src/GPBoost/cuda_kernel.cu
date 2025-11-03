@@ -156,7 +156,7 @@ namespace GPBoost {
                 double cov = Matern_GPU_case(var, range_dist, shape);
 
                 double num = cov - dot;
-                double dij = corr_diag_i * corr_diag[j] / (num * num);
+                dij = corr_diag_i * corr_diag[j] / (num * num);
             }
             // insert into local top-k
             int worst = 0;
