@@ -811,7 +811,7 @@ namespace GPBoost {
 		* \param save_random_effects_indices_of_data_and_no_Z If true a vector random_effects_indices_of_data_, which relates random effects b to samples Zb, is used (the matrix Z_ is then not constructed)
 		*           save_random_effects_indices_of_data_and_no_Z = true is currently only used when doing calculations on the random effects scale b and not on the "data scale" Zb for non-Gaussian data
 		*			This option can only be selected when save_dist_use_Z_for_duplicates = true
-		* \param use_precomputed_dist_for_calc_cov If true, precomputed distances ('dist') are used for calculating covariances, otherwise the coordinates are used ('coords' and 'coords_pred'). 
+		* \param use_precomputed_dist_for_calc_cov If true, precomputed distances ('dist') are used for calculating covariances, otherwise the coordinates are used ('coords' and 'coords_pred').
 		*			This is currently only false for Vecchia approximations
 		*/
 		RECompGP(const den_mat_t& coords,
@@ -956,7 +956,7 @@ namespace GPBoost {
 		* \param apply_tapering If true, tapering is applied to the covariance function (element-wise multiplication with a compactly supported Wendland correlation function)
 		* \param apply_tapering_manually If true, tapering is applied to the covariance function manually and not directly in 'CalcSigma'
 		* \param dim_coordinates Dimension of input coordinates / features
-		* \param use_precomputed_dist_for_calc_cov If true, precomputed distances ('dist') are used for calculating covariances, otherwise the coordinates are used ('coords' and 'coords_pred'). 
+		* \param use_precomputed_dist_for_calc_cov If true, precomputed distances ('dist') are used for calculating covariances, otherwise the coordinates are used ('coords' and 'coords_pred').
 		*			This is currently only false for Vecchia approximations
 		*/
 		RECompGP(const std::vector<double>& rand_coef_data,
@@ -1381,22 +1381,22 @@ namespace GPBoost {
 				if (this->has_Z_) {
 					T_mat sigma_grad;
 					if (is_cross_covariance_IP_) {
-						(*cov_function_).template CalculateGradientCovMat<T_mat>(*dist_, coords_ind_point_, coords_, sigma_, this->cov_pars_, 
+						(*cov_function_).template CalculateGradientCovMat<T_mat>(*dist_, coords_ind_point_, coords_, sigma_, this->cov_pars_,
 							sigma_grad, transf_scale, nugget_var, ind_par - 1, false);
 					}
 					else {
-						(*cov_function_).template CalculateGradientCovMat<T_mat>(*dist_, coords_, coords_, sigma_, this->cov_pars_, 
+						(*cov_function_).template CalculateGradientCovMat<T_mat>(*dist_, coords_, coords_, sigma_, this->cov_pars_,
 							sigma_grad, transf_scale, nugget_var, ind_par - 1, true);
 					}
 					Z_sigma_grad_Zt = this->Z_ * sigma_grad * this->Z_.transpose();
 				}
 				else {
 					if (is_cross_covariance_IP_) {
-						(*cov_function_).template CalculateGradientCovMat<T_mat>(*dist_, coords_ind_point_, coords_, sigma_, this->cov_pars_, 
+						(*cov_function_).template CalculateGradientCovMat<T_mat>(*dist_, coords_ind_point_, coords_, sigma_, this->cov_pars_,
 							Z_sigma_grad_Zt, transf_scale, nugget_var, ind_par - 1, false);
 					}
 					else {
-						(*cov_function_).template CalculateGradientCovMat<T_mat>(*dist_, coords_, coords_, sigma_, this->cov_pars_, 
+						(*cov_function_).template CalculateGradientCovMat<T_mat>(*dist_, coords_, coords_, sigma_, this->cov_pars_,
 							Z_sigma_grad_Zt, transf_scale, nugget_var, ind_par - 1, true);
 					}
 				}
@@ -1688,7 +1688,7 @@ namespace GPBoost {
 		* \param ind Index vector of data points
 		* \param[out] coords_sub Subset of coordinates
 		*/
-		void GetSubSetCoords(std::vector<int> ind, 
+		void GetSubSetCoords(std::vector<int> ind,
 			den_mat_t& coords_sub) const {
 			coords_sub = coords_(ind, Eigen::all);
 		}

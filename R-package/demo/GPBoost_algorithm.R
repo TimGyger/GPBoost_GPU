@@ -245,9 +245,9 @@ bst <- gpboost(data = X, label = y, gp_model = gp_model, nrounds = nrounds,
 feature_importances <- gpb.importance(bst, percentage = TRUE)
 gpb.plot.importance(feature_importances, top_n = 5L, measure = "Gain")
 # Partial dependence plot
-gpb.plot.partial.dependence(bst, X, variable = 1)
+gpb.plot.partial.dependence(bst, X, variable = 1, latent_scale = TRUE)
 # Interaction plot
-gpb.plot.part.dep.interact(bst, X, variables = c(1,2))
+gpb.plot.part.dep.interact(bst, X, variables = c(1,2), latent_scale = TRUE)
 # H-statistic for interactions
 package_to_load <- "flashlight" # load required package (non-standard way of loading to avoid CRAN warnings)
 do.call(require,list(package_to_load, character.only=TRUE))
@@ -296,10 +296,12 @@ pred_loaded <- predict(bst_loaded, data = Xtest, group_data_pred = group_test,
 pred$fixed_effect - pred_loaded$fixed_effect
 pred$random_effect_mean - pred_loaded$random_effect_mean
 pred$random_effect_cov - pred_loaded$random_effect_cov
+# Accessing the saved gp_model
+summary(bst_loaded$.__enclos_env__$private$gp_model)
 
 # Note: can also convert to string and load from string
-model_str <- bst$save_model_to_string()
-bst_loaded <- gpb.load(model_str = model_str)
+# model_str <- bst$save_model_to_string()
+# bst_loaded <- gpb.load(model_str = model_str)
 
 #--------------------GPBoostOOS algorithm: Hyperparameters estimated out-of-sample----------------
 # Create random effects model and dataset

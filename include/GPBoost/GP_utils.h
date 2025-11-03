@@ -286,7 +286,7 @@ namespace GPBoost {
 //				}
 //			}
 //		}
-		
+
 		dist = T_mat(coords2.rows(), coords1.rows());
 		dist.setFromTriplets(triplets.begin(), triplets.end());
 		dist.makeCompressed();
@@ -566,7 +566,7 @@ namespace GPBoost {
 	* \param GPU_use if false Use CPU
 	*/
 	void spmatmul(const sp_mat_rm_t& A, const sp_mat_rm_t& B, sp_mat_rm_t& C, bool GPU_use);
-	
+
 	/*!
 	* \brief Linear solve L^{-1} * R = X for given Cholesky factor L
 	* \param chol Cholesky factor L

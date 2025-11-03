@@ -74,7 +74,7 @@ rand_eff = rand_eff - np.mean(rand_eff)
 # Simulate fixed effects
 p = 5 # number of predictor variables
 X = np.random.rand(n, p)
-f = f1d(X[:, 0])
+f = 100*f1d(X[:, 0])
 y = simulate_response_variable(lp=f, rand_eff=rand_eff, likelihood=likelihood)
 hst = plt.hist(y, bins=20)  # visualize response variable
 plt.show(block=False)
@@ -269,23 +269,23 @@ Xpd = pd.DataFrame(X, columns=['variable_' + str(i) for i in range(p)])
 pdp_dist = pdp.PDPIsolate(model=bst, df=Xpd.copy(), model_features=Xpd.columns, # need to copy() since PDPIsolate modifies the df
                            feature='variable_0', feature_name='variable_0', 
                            n_classes=0, num_grid_points=50,
-                           predict_kwds={"ignore_gp_model": True})
+                           predict_kwds={"ignore_gp_model": True, "pred_latent": True})
 fig, axes = pdp_dist.plot(engine='matplotlib', plot_lines=True, frac_to_plot=0.1)
 # Interaction plot
 interact = pdp.PDPInteract(model=bst, df=Xpd.copy(), model_features=Xpd.columns,
                              features=['variable_0','variable_1'],
                              feature_names=['variable_0','variable_1'],
-                             n_classes=0, predict_kwds={"ignore_gp_model": True})
+                             n_classes=0, predict_kwds={"ignore_gp_model": True, "pred_latent": True})
 fig, axes = interact.plot(engine='matplotlib', plot_type='contour')
 """
 # Note: the above code is for pdpbox version 0.3.0 or latter, for earlier versions use:
 # pdp_dist = pdp.pdp_isolate(model=bst, dataset=Xpd, model_features=Xpd.columns,
 #                            feature='variable_0', num_grid_points=50,
-#                            predict_kwds={"ignore_gp_model": True})
+#                            predict_kwds={"ignore_gp_model": True, "pred_latent": True})
 # ax = pdp.pdp_plot(pdp_dist, 'variable_0', plot_lines=True, frac_to_plot=0.1)
 # interact = pdp.pdp_interact(model=bst, dataset=Xpd, model_features=Xpd.columns,
 #                              features=['variable_0','variable_1'],
-#                              predict_kwds={"ignore_gp_model": True})
+#                              predict_kwds={"ignore_gp_model": True, "pred_latent": True})
 # pdp.pdp_interact_plot(interact, ['variable_0','variable_1'], x_quantile=True,
 #                       plot_type='contour', plot_pdp=True) # Ignore the error message 'got an unexpected keyword argument 'contour_label_fontsize'' in 'pdp_interact_plot'
 """
@@ -319,6 +319,8 @@ pred_loaded = bst_loaded.predict(data=Xtest, group_data_pred=group_test,
 print(pred['fixed_effect'] - pred_loaded['fixed_effect'])
 print(pred['random_effect_mean'] - pred_loaded['random_effect_mean'])
 print(pred['random_effect_cov'] - pred_loaded['random_effect_cov'])
+# Accessing the saved gp_model
+bst_loaded.gp_model.summary()
 
 # Note: can also convert to string and load from string
 # model_str = bst.model_to_string()

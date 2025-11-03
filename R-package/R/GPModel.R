@@ -31,9 +31,19 @@
 #' \item{ "t": t-distribution (e.g., for robust regression) }
 #' \item{ "t_fix_df": t-distribution with the degrees-of-freedom (df) held fixed and not estimated. 
 #' The df can be set via the \code{likelihood_additional_param} parameter }
+#' \item{ "zero_inflated_gamma": Zero-inflated gamma likelihood. 
+#' The log-transformed mean of the response variable equals the sum of fixed and random effects, E(y) = mu = exp(F(X) + Zb), 
+#' and the rate parameter equals (1-p0) * gamma / mu, where p0 is the zero-inflation probability and gamma the shape parameter. 
+#' I.e., the rate parameter depends on F(X) + Zb, and p0 and gamma are (univariate auxiliary) parameters that are estimated. 
+#' Note that E(y) = mu above refers the the mean of the entire distribution and not just the positive part }
+#' \item{ "zero_censored_power_transformed_normal": Likelihood of a censored and power-transformed normal variable 
+#' for modeling data with a point mass at 0 and a continuous distribution for y > 0. 
+#' The model used is Y = max(0,X)^lambda, X ~ N(mu, sigma^2), where mu = F(X) + Zb, 
+#' and sigma and lambda are (auxiliary) parameters that are estimated. 
+#' For more details on this model, see Sigrist et al. (2012, AOAS) "A dynamic nonstationary spatio-temporal model for short term prediction of precipitation" }
 #' \item{ "gaussian_heteroscedastic": Gaussian likelihood where both the mean and the variance 
 #' are related to fixed and random effects. This is currently only implemented for GPs with a 'vecchia' approximation }
-#' \item{ Note: the first lines in the \url{https://github.com/fabsig/GPBoost/blob/master/include/GPBoost/likelihoods.h}{likelihoods source file} contain additional comments on the specific parametrizations used }
+#' \item{ Note: the first lines in the \href{https://github.com/fabsig/GPBoost/blob/master/include/GPBoost/likelihoods.h}{likelihoods source file} contain additional comments on the specific parametrizations used }
 #' \item{ Note: other likelihoods can be implemented upon request }
 #' }
 #' @param likelihood_additional_param A \code{numeric} specifying an additional parameter for the \code{likelihood} 
@@ -74,6 +84,11 @@
 #' \item{ "matern_estimate_shape": same as "matern" but the smoothness parameter is also estimated }
 #' \item{ "matern_space_time": Spatio-temporal Matern covariance function with different range parameters for space and time. 
 #' Note that the first column in \code{gp_coords} must correspond to the time dimension }
+#' \item{ "space_time_gneiting": Spatio-temporal covariance function given in Eq. (16) of Gneiting (2002). 
+#' Note that the first column in \code{gp_coords} must correspond to the time dimension. 
+#' This covariance has seven parameters (in the following order: sigma2, a, c, alpha, nu, beta, delta) which are all estimated by default. 
+#' You can disable the estimation of some of these parameter using the 'estimate_cov_par_index' argument of the \code{params} argument in either 
+#' the \code{fit} function of a \code{gp_model} object or the \code{set_optim_params} function prior to estimation. }
 #' \item{ "matern_ard": anisotropic Matern covariance function with Automatic Relevance Determination (ARD), 
 #' i.e., with a different range parameter for every coordinate dimension / column of \code{gp_coords} }
 #' \item{ "matern_ard_estimate_shape": same as "matern_ard" but the smoothness parameter is also estimated }
@@ -343,6 +358,7 @@
 #'                \item{momentum_offset: \code{integer} (Default = 2, only relevant for "gradient_descent")}. 
 #'                Number of iterations for which no momentum is applied in the beginning.
 #'                \item{m_lbfgs: \code{integer} (Default = 6)}. Number of corrections to approximate the inverse Hessian matrix for the "lbfgs" optimizer
+#'                \item{delta_conv_mode_finding: \code{numeric} (Default = 1E-8)}. Convergence tolerance in mode finding algorithm for Laplace approximation for non-Gaussian likelihoods
 #'            }
 #' @param offset A \code{numeric} \code{vector} with 
 #' additional fixed effects contributions that are added to the linear predictor (= offset). 
@@ -504,9 +520,9 @@ gpb.GPModel <- R6::R6Class(
           if (private$num_coef != private$num_covariates * private$num_sets_fe) stop("incorrect 'num_coef'")
           private$X_loaded_from_file = model_list[["X"]]
           if (is.null(colnames(private$X_loaded_from_file))) {
-            private$coef_names <- c(private$coef_names,paste0("Covariate_",1:private$num_covariates))
+            private$coef_names <- paste0("Covariate_", 1:private$num_covariates)
           } else {
-            private$coef_names <- c(private$coef_names,colnames(private$X_loaded_from_file))
+            private$coef_names <- colnames(private$X_loaded_from_file)
           }
           if (private$num_sets_fe == 2) {
             private$coef_names <- c(private$coef_names, paste0(private$coef_names,"_scale"))
@@ -1004,13 +1020,18 @@ gpb.GPModel <- R6::R6Class(
         if (dim(X)[1] != private$num_data) {
           stop("fit.GPModel: Number of data points in ", sQuote("X"), " does not match number of data points of initialized model")
         }
+        if (is.null(params[["std_dev"]]) & !private$std_dev_has_been_set) {
+          if (!(dim(X)[2] == 1 & all(X[,1] == 1))) { # not only intercept
+            params[["std_dev"]] <- TRUE
+          }
+        }
         private$has_covariates <- TRUE
         private$num_covariates <- as.integer(dim(X)[2])
         private$num_coef <- private$num_covariates * private$num_sets_fe
         if (is.null(colnames(X))) {
-          private$coef_names <- c(private$coef_names,paste0("Covariate_",1:private$num_covariates))
+          private$coef_names <- paste0("Covariate_", 1:private$num_covariates)
         } else {
-          private$coef_names <- c(private$coef_names,colnames(X))
+          private$coef_names <- colnames(X)
         }
         if (private$num_sets_fe == 2) {
           private$coef_names <- c(private$coef_names, paste0(private$coef_names,"_scale"))
@@ -1174,6 +1195,7 @@ gpb.GPModel <- R6::R6Class(
         , private$params[["estimate_aux_pars"]]
         , private$params[["estimate_cov_par_index"]]
         , private$params[["m_lbfgs"]]
+        , private$params[["delta_conv_mode_finding"]]
       )
       return(invisible(self))
     },
@@ -1853,7 +1875,7 @@ gpb.GPModel <- R6::R6Class(
         implemented for models that have been loaded from a saved file")
       }
       num_re_comps = (private$num_group_re + private$num_group_rand_coef + 
-        private$num_gp + private$num_gp_rand_coef) * private$num_sets_re
+                        private$num_gp + private$num_gp_rand_coef) * private$num_sets_re
       if (!is.null(private$drop_intercept_group_rand_effect)) {
         num_re_comps <- num_re_comps - sum(private$drop_intercept_group_rand_effect)
       }
@@ -2258,10 +2280,13 @@ gpb.GPModel <- R6::R6Class(
                   fitc_piv_chol_preconditioner_rank = -1L, # default value is set in C++
                   estimate_aux_pars = TRUE,
                   estimate_cov_par_index = -1L,
-                  m_lbfgs = -1L),# default value is set in C++
+                  m_lbfgs = -1L, # default value is set in C++
+                  delta_conv_mode_finding = -1 # default value is set in C++
+    ),
+    std_dev_has_been_set = FALSE,
     num_sets_re = 1,
     num_sets_fe = 1,
-
+    
     # Finalize will free up the handles
     finalize = function() {
       .Call(
@@ -2306,7 +2331,7 @@ gpb.GPModel <- R6::R6Class(
       }
       ## Check format of parameters
       numeric_params <- c("lr_cov", "acc_rate_cov", "delta_rel_conv",
-                          "lr_coef", "acc_rate_coef", "cg_delta_conv")
+                          "lr_coef", "acc_rate_coef", "cg_delta_conv", "delta_conv_mode_finding")
       integer_params <- c("maxit", "nesterov_schedule_version",
                           "momentum_offset", "cg_max_num_it", "cg_max_num_it_tridiag",
                           "num_rand_vec_trace", "seed_rand_vec_trace",
@@ -2365,6 +2390,9 @@ gpb.GPModel <- R6::R6Class(
       }
       ## Update private$params
       for (param in names(params)) {
+        if (param == "std_dev") { 
+          private$std_dev_has_been_set <- TRUE
+        }
         if (param == "estimate_cov_par_index") {
           if (params[["estimate_cov_par_index"]][[1]] >= 0 & 
               length(params[["estimate_cov_par_index"]]) != private$num_cov_pars) {

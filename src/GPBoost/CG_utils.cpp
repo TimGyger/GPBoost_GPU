@@ -25,7 +25,7 @@ namespace GPBoost {
 		vec_t& u,
 		bool& NA_or_Inf_found,
 		int p,
-		const int find_mode_it,
+		bool initialize_to_zero,
 		const double delta_conv,
 		const double THRESHOLD_ZERO_RHS_CG,
 		const string_t cg_preconditioner_type,
@@ -43,11 +43,12 @@ namespace GPBoost {
 			u.setZero();
 			return;
 		}
-		//Cold-start in the first iteration of mode finding, otherwise always warm-start (=initalize with mode from previous iteration)
-		if (find_mode_it == 0) {
-			u.setZero();
-			//r = rhs - A * u
-			r = rhs; //since u is 0
+		if (initialize_to_zero) {
+			u.setZero();			
+			r = rhs; //r = rhs - A * u
+		}
+		else if (u.isZero(0)) {
+			r = rhs; //r = rhs - A * u
 		}
 		else {
 			//r = rhs - A * u
@@ -222,7 +223,7 @@ namespace GPBoost {
 		vec_t& u,
 		bool& NA_or_Inf_found,
 		int p,
-		const int find_mode_it,
+		bool initialize_to_zero,
 		const double delta_conv,
 		const double THRESHOLD_ZERO_RHS_CG,
 		const string_t cg_preconditioner_type,
@@ -256,10 +257,12 @@ namespace GPBoost {
 		//Sigma * rhs, where Sigma = B^(-1) D B^(-T)
 		B_invt_rhs = B_rm.transpose().triangularView<Eigen::UpLoType::UnitUpper>().solve(rhs);
 		Sigma_rhs = D_inv_B_rm.triangularView<Eigen::UpLoType::Lower>().solve(B_invt_rhs);
-		//Cold-start in the first iteration of mode finding, otherwise always warm-start (=initalize with mode from previous iteration)
-		if (find_mode_it == 0) {
+		if (initialize_to_zero) {
 			u.setZero();
-			r = Sigma_rhs; //since u is 0
+			r = Sigma_rhs; //r = rhs - A * u
+		}
+		else if (u.isZero(0)) {
+			r = Sigma_rhs; //r = rhs - A * u
 		}
 		else {
 			//r = Sigma * rhs - (W^(-1) + Sigma) * W * u = Sigma * rhs - u - Sigma * W * u 
@@ -482,7 +485,7 @@ namespace GPBoost {
 		vec_t& u,
 		bool& NA_or_Inf_found,
 		int p,
-		const int find_mode_it,
+		bool initialize_to_zero,
 		const double delta_conv,
 		const double THRESHOLD_ZERO_RHS_CG,
 		const string_t cg_preconditioner_type,
@@ -500,11 +503,12 @@ namespace GPBoost {
 			u.setZero();
 			return;
 		}
-		//Cold-start in the first iteration of mode finding, otherwise always warm-start (=initalize with mode from previous iteration)
-		if (find_mode_it == 0) {
-			u.setZero();
-			//r = rhs - A * u
-			r = rhs; //since u is 0
+		if (initialize_to_zero) {
+			u.setZero();			
+			r = rhs; //r = rhs - A * u
+		}
+		else if (u.isZero(0)) {
+			r = rhs; //r = rhs - A * u
 		}
 		else {
 			//r = rhs - A * u
@@ -712,7 +716,7 @@ namespace GPBoost {
 		vec_t& u,
 		bool& NA_or_Inf_found,
 		int p,
-		const int find_mode_it,
+		bool initialize_to_zero,
 		const double delta_conv,
 		const double THRESHOLD_ZERO_RHS_CG,
 		const string_t cg_preconditioner_type,
@@ -730,11 +734,12 @@ namespace GPBoost {
 			u.setZero();
 			return;
 		}
-		//Cold-start in the first iteration of mode finding, otherwise always warm-start (=initalize with mode from previous iteration)
-		if (find_mode_it == 0) {
-			u.setZero();
-			//r = rhs - A * u
-			r = rhs; //since u is 0
+		if (initialize_to_zero) {
+			u.setZero();			
+			r = rhs; //r = rhs - A * u
+		}
+		else if (u.isZero(0)) {
+			r = rhs; //r = rhs - A * u
 		}
 		else {
 			//r = rhs - A * u
@@ -908,63 +913,77 @@ namespace GPBoost {
 			"This could happen if the initial learning rate is too large. Otherwise increase 'cg_max_num_it_tridiag'.", p);
 	} // end CGTridiagVIFLaplaceSigmaPlusWinv
 
-	void simProbeVect(RNG_t& generator, den_mat_t& Z, const bool rademacher) {
 
-		double u;
-		if (rademacher) {
-			std::uniform_real_distribution<double> udist(0.0, 1.0);
-			for (int i = 0; i < Z.rows(); ++i) {
-				for (int j = 0; j < Z.cols(); j++) {
-					u = udist(generator);
-					if (u > 0.5) {
-						Z(i, j) = 1.;
-					}
-					else {
-						Z(i, j) = -1.;
-					}
-				}
-			}
-		}
-		else {
+	//// Old non-parallel version
+	//void GenRandVecNormal(RNG_t& generator,
+	//	den_mat_t& R) {
+
+	//	std::normal_distribution<double> ndist(0.0, 1.0);
+	//	//Do not parallelize! - Despite seed: no longer deterministic
+	//	for (int i = 0; i < R.rows(); ++i) {
+	//		for (int j = 0; j < R.cols(); j++) {
+	//			R(i, j) = ndist(generator);
+	//		}
+	//	}
+	//}
+
+	void GenRandVecNormalParallel(int base_seed, 
+		uint64_t& run_id,
+		den_mat_t& R) {
+
+		const uint64_t this_run_id = run_id;  // snapshot once
+		const uint32_t b32 = static_cast<uint32_t>(base_seed);
+#pragma omp parallel for schedule(static)
+		for (int col_i = 0; col_i < R.cols(); ++col_i) {
 			std::normal_distribution<double> ndist(0.0, 1.0);
-			for (int i = 0; i < Z.rows(); ++i) {
-				for (int j = 0; j < Z.cols(); j++) {
-					Z(i, j) = ndist(generator);
-				}
+			// derive a per-column seed from the base seed and column index in order that results are the same irrespective of the number of threads
+			std::seed_seq seq{ b32, static_cast<uint32_t>(this_run_id), static_cast<uint32_t>(this_run_id >> 32), static_cast<uint32_t>(col_i) };
+			RNG_t generator(seq);
+			for (int row_i = 0; row_i < R.rows(); ++row_i) {
+				R(row_i, col_i) = ndist(generator);
 			}
 		}
-	} // end simProbeVect
+		++run_id;
+	}//endGenRandVecNormalParallel
 
-	void GenRandVecNormal(RNG_t& generator,
+	// Old non-parallel version
+	//void GenRandVecRademacher(RNG_t& generator,
+	//	den_mat_t& R) {
+
+	//	double u;
+	//	std::uniform_real_distribution<double> udist(0.0, 1.0);
+	//	//Do not parallelize! - Despite seed: no longer deterministic
+	//	for (int i = 0; i < R.rows(); ++i) {
+	//		for (int j = 0; j < R.cols(); j++) {
+	//			u = udist(generator);
+	//			if (u > 0.5) {
+	//				R(i, j) = 1.;
+	//			}
+	//			else {
+	//				R(i, j) = -1.;
+	//			}
+	//		}
+	//	}
+	//}
+
+	void GenRandVecRademacherParallel(int base_seed,
+		uint64_t& run_id,
 		den_mat_t& R) {
 
-		std::normal_distribution<double> ndist(0.0, 1.0);
-		//Do not parallelize! - Despite seed: no longer deterministic
-		for (int i = 0; i < R.rows(); ++i) {
-			for (int j = 0; j < R.cols(); j++) {
-				R(i, j) = ndist(generator);
+		const uint64_t this_run_id = run_id;  // snapshot once
+		const uint32_t b32 = static_cast<uint32_t>(base_seed);
+#pragma omp parallel for schedule(static)
+		for (int col_i = 0; col_i < R.cols(); ++col_i) {
+			std::bernoulli_distribution bdist(0.5);
+			// derive a per-column seed from the base seed and column index in order that results are the same irrespective of the number of threads
+			std::seed_seq seq{ b32, static_cast<uint32_t>(this_run_id), static_cast<uint32_t>(this_run_id >> 32), static_cast<uint32_t>(col_i) };
+			RNG_t generator(seq);
+			for (int row_i = 0; row_i < R.rows(); ++row_i) {
+				R(row_i, col_i) = bdist(generator) ? 1.0 : -1.0;
 			}
 		}
-	}
-
-	void GenRandVecRademacher(RNG_t& generator,
-		den_mat_t& R) {
-
-		double u;
-		std::uniform_real_distribution<double> udist(0.0, 1.0);
-		//Do not parallelize! - Despite seed: no longer deterministic
-		for (int i = 0; i < R.rows(); ++i) {
-			for (int j = 0; j < R.cols(); j++) {
-				u = udist(generator);
-				if (u > 0.5) {
-					R(i, j) = 1.;
-				}
-				else {
-					R(i, j) = -1.;
-				}
-			}
-		}
-	}
+		++run_id;
+	}//GenRandVecRademacherParallel
 
 	void LogDetStochTridiag(const std::vector<vec_t>& Tdiags,
 		const  std::vector<vec_t>& Tsubdiags,
@@ -1078,7 +1097,7 @@ namespace GPBoost {
 		bool& NA_or_Inf_found,
 		int p,
 		const double delta_conv,
-		const int find_mode_it,
+		bool initialize_to_zero,
 		const double THRESHOLD_ZERO_RHS_CG,
 		const bool run_in_parallel_do_not_report_non_convergence,
 		const string_t cg_preconditioner_type,
@@ -1104,8 +1123,7 @@ namespace GPBoost {
 			u.setZero();
 			return;
 		}
-		if (find_mode_it == 0) {
-			//Cold-start in the first iteration of mode finding, otherwise always warm-start (=initalize with mode from previous iteration)
+		if (initialize_to_zero) {
 			u.setZero();
 			r = rhs; //r = rhs - A * u
 		}

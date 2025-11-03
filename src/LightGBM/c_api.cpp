@@ -178,17 +178,19 @@ yamc::shared_lock<yamc::alternate::shared_mutex> lock(&mtx);
 					Log::Fatal("Bagging cannot be applied for the GPBoost algorithm. Set 'bagging_freq = 0' ");
 				}
 				if (train_data_->metadata().weights() != nullptr) {
-					Log::Fatal("Weighted data is currently not supported for the GPBoost algorithm ");
+					Log::Fatal("Weights need to be provided to the 'GPModel()' constructor for the GPBoost algorithm ");
 				}
 				if (config_.sigmoid != 1.0) {
 					Log::Fatal("The GPBoost algorithm currently does not support a sigmoid != 1.0 ");
 				}
 				if (config_.objective != std::string("regression") && config_.objective != std::string("bernoulli_probit") && 
 					config_.objective != std::string("bernoulli_logit") && config_.objective != std::string("binary") && 
+					config_.objective != std::string("binomial") && config_.objective != std::string("binomial_probit") && config_.objective != std::string("binomial_logit") &&
 					config_.objective != std::string("poisson") && config_.objective != std::string("gamma") && 
 					config_.objective != std::string("negative_binomial") && config_.objective != std::string("negative_binomial_1") &&
-					config_.objective != std::string("t") && config_.objective != std::string("t_fix_df") &&
-					config_.objective != std::string("beta") && config_.objective != std::string("gaussian_heteroscedastic")) {
+					config_.objective != std::string("beta") && config_.objective != std::string("t") && config_.objective != std::string("t_fix_df") &&
+					config_.objective != std::string("gaussian_heteroscedastic") && config_.objective != std::string("lognormal") && config_.objective != std::string("beta_binomial") &&
+					config_.objective != std::string("zero_inflated_gamma") && config_.objective != std::string("zero_censored_power_transformed_normal")) {
 					Log::Fatal("GPBoost currently does not support 'objective = %s' ", config_.objective.c_str());
 				}
 				// Make sure that objective for boosting and likelihood for re_model match, otherwise change them accordingly
@@ -2792,7 +2794,8 @@ int GPB_SetOptimConfig(REModelHandle handle,
 	double* init_aux_pars,
 	bool estimate_aux_pars,
 	const int* estimate_cov_par_index,
-	int m_lbfgs) {
+	int m_lbfgs,
+	double delta_conv_mode_finding) {
 	API_BEGIN();
 	REModel* ref_remodel = reinterpret_cast<REModel*>(handle);
 	ref_remodel->SetOptimConfig(init_cov_pars,
@@ -2823,7 +2826,8 @@ int GPB_SetOptimConfig(REModelHandle handle,
 		init_aux_pars,
 		estimate_aux_pars,
 		estimate_cov_par_index,
-		m_lbfgs);
+		m_lbfgs, 
+		delta_conv_mode_finding);
 	API_END();
 }
 

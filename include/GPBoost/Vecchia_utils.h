@@ -63,18 +63,18 @@ namespace GPBoost {
 	* \param coords Coordinates of observations
 	* \param num_data Number of observations
 	* \param num_neighbors Maximal number of neighbors
-	* \param num_close_neighbors 
+	* \param num_close_neighbors
 	* \param start_at First query point
 	* \param end_search_at Last query point
 	* \param dim_coords Dimension of coordinates
 	* \param sort_sum Diagonal of covariance matrix
 	* \param chol_ip_cross_cov inverse of Cholesky factor of inducing point matrix times cross covariance: Sigma_ip^-1/2 Sigma_cross_cov
-	* \param sort_inv_sum 
-	* \param coords_sum 
+	* \param sort_inv_sum
+	* \param coords_sum
 	* \param neighbors Vecchia neighbors
 	* \param dist_obs_neighbors Distances of Vecchia neighbors and coresponding points
-	* \param save_distances 
-	* \param has_duplicates 
+	* \param save_distances
+	* \param has_duplicates
 	* \param check_has_duplicates 	*/
 	bool find_nearest_neighbors_Vecchia_fast_GPU(
 		const den_mat_t& coords,

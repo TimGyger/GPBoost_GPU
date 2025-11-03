@@ -4129,6 +4129,22 @@ class GPModel(object):
 
                         t-distribution with the degrees-of-freedom (df) held fixed and not estimated. The df can be set via the 'likelihood_additional_param' parameter
 
+                    - "zero_inflated_gamma":
+                    
+                        Zero-inflated gamma likelihood. 
+                        The log-transformed mean of the response variable equals the sum of fixed and random effects, E(y) = mu = exp(F(X) + Zb), 
+                        and the rate parameter equals (1-p0) * gamma / mu, where p0 is the zero-inflation probability and gamma the shape parameter. 
+                        I.e., the rate parameter depends on F(X) + Zb, and p0 and gamma are (univariate auxiliary) parameters that are estimated. 
+                        Note that E(y) = mu above refers the the mean of the entire distribution and not just the positive part
+
+                    - "zero_censored_power_transformed_normal":
+                    
+                        Likelihood of a censored and power-transformed normal variable for modeling data 
+                        with a point mass at 0 and a continuous distribution for y > 0. 
+                        The model used is Y = max(0,X)^lambda, X ~ N(mu, sigma^2), where mu = F(X) + Zb, 
+                        and sigma and lambda are (auxiliary) parameters that are estimated. 
+                        For more details on this model, see Sigrist et al. (2012, AOAS) "A dynamic nonstationary spatio-temporal model for short term prediction of precipitation"
+                    
                     - "gaussian_heteroscedastic":
 
                         Gaussian likelihood where both the mean and the variance are related to fixed and random effects. This is currently only implemented for GPs with a 'vecchia' approximation
@@ -4175,6 +4191,14 @@ class GPModel(object):
 
                     Spatio-temporal Matern covariance function with different range parameters for space and time.
                     Note that the first column in 'gp_coords' must correspond to the time dimension
+
+                - "space_time_gneiting":
+
+                    Spatio-temporal covariance function given in Eq. (16) of Gneiting (2002). 
+                    Note that the first column in 'gp_coords' must correspond to the time dimension.
+                    This covariance has seven parameters (in the following order: sigma2, a, c, alpha, nu, beta, delta) which are all estimated by default.
+                    You can disable the estimation of some of these parameter using the 'estimate_cov_par_index' argument of the 'params' argument in either 
+                    the 'fit' function of a 'gp_model' object or the 'set_optim_params' function prior to estimation.
 
                 - "matern_ard":
 
@@ -4253,7 +4277,7 @@ class GPModel(object):
 
             num_parallel_threads : integer, optional (default=None)
                 The number of parallel threads for OMP. If num_parallel_threads=None, all available threads are used
-            matrix_inversion_method : string, optional (default="cholesky")
+            matrix_inversion_method : string, optional (default="default")
                 Method used for inverting covariance matrices. Available options:
 
                     - "default":
@@ -4464,8 +4488,10 @@ class GPModel(object):
                        "fitc_piv_chol_preconditioner_rank": -1, # default value is set in C++
                        "estimate_aux_pars": True,
                        "estimate_cov_par_index": np.array([-1], dtype=np.int32),
-                       "m_lbfgs": -1 # default value is set in C++
+                       "m_lbfgs": -1, # default value is set in C++
+                       "delta_conv_mode_finding": -1 # default value is set in C++
                        }
+        self.std_dev_has_been_set = False
         self.num_sets_re = 1
         self.num_sets_fe = 1
 
@@ -4564,14 +4590,14 @@ class GPModel(object):
                 self.num_parallel_threads = num_parallel_threads
         self.likelihood_additional_param = likelihood_additional_param
         # Define default NULL values for calling C function
-        group_data_c = ctypes.c_void_p()
-        group_rand_coef_data_c = ctypes.c_void_p()
-        ind_effect_group_rand_coef_c = ctypes.c_void_p()
-        drop_intercept_group_rand_effect_c = ctypes.c_void_p()
-        gp_coords_c = ctypes.c_void_p()
-        gp_rand_coef_data_c = ctypes.c_void_p()
-        cluster_ids_c = ctypes.c_void_p()
-        weights_c = ctypes.c_void_p()
+        group_data_c = None # ctypes.c_void_p()
+        group_rand_coef_data_c = None
+        ind_effect_group_rand_coef_c = None
+        drop_intercept_group_rand_effect_c = None
+        gp_coords_c = None
+        gp_rand_coef_data_c = None
+        cluster_ids_c = None
+        weights_c = None
         # Set data for grouped random effects
         if group_data is not None:
             group_data, group_data_names = _format_check_data(data=group_data, get_variable_names=True,
@@ -4818,6 +4844,13 @@ class GPModel(object):
         else:
             likelihood_additional_param_c = self.likelihood_additional_param
 
+        cov_c    = c_str(self.cov_function)
+        gp_c     = c_str(self.gp_approx)
+        ord_c    = c_str(self.vecchia_ordering)
+        ips_c    = c_str(self.ind_points_selection)
+        lik_c    = c_str(likelihood)
+        mim_c    = c_str(self.matrix_inversion_method)
+
         _safe_call(_LIB.GPB_CreateREModel(
             ctypes.c_int(self.num_data),
             cluster_ids_c,
@@ -4832,19 +4865,19 @@ class GPModel(object):
             ctypes.c_int(self.dim_coords),
             gp_rand_coef_data_c,
             ctypes.c_int(self.num_gp_rand_coef),
-            c_str(self.cov_function),
+            cov_c,
             ctypes.c_double(self.cov_fct_shape),
-            c_str(self.gp_approx),
+            gp_c,
             ctypes.c_double(self.cov_fct_taper_range),
             ctypes.c_double(self.cov_fct_taper_shape),
             ctypes.c_int(self.num_neighbors),
-            c_str(self.vecchia_ordering),
+            ord_c,
             ctypes.c_int(self.num_ind_points),
             ctypes.c_double(self.cover_tree_radius),
-            c_str(self.ind_points_selection),
-            c_str(likelihood),
+            ips_c,
+            lik_c,
             ctypes.c_double(likelihood_additional_param_c),
-            c_str(self.matrix_inversion_method),
+            mim_c,
             ctypes.c_int(self.seed),
             ctypes.c_int(self.num_parallel_threads),
             ctypes.c_bool(self.has_weights),
@@ -4900,6 +4933,8 @@ class GPModel(object):
             if 'piv_chol_rank' in params:
                 raise GPBoostError("The argument 'piv_chol_rank' is discontinued. Use the argument 'fitc_piv_chol_preconditioner_rank' instead ")
             for param in params:
+                if param == "std_dev":
+                    self.std_dev_has_been_set = True
                 if param == "init_cov_pars":
                     if params[param] is not None:
                         params[param] = _format_check_1D_data(params[param], data_name="params['init_cov_pars']",
@@ -5094,6 +5129,8 @@ class GPModel(object):
                     Number of iterations for which no momentum is applied in the beginning.
                 - m_lbfgs : integer, optional (default = 6)
                     Number of corrections to approximate the inverse Hessian matrix for the "lbfgs" optimizer
+                - delta_conv_mode_finding : double, optional (default = 1e-8)
+                    Convergence tolerance in mode finding algorithm for Laplace approximation for non-Gaussian likelihoods
 
         offset : numpy 1-D array or None, optional (default=None)
             Additional fixed effects contributions that are added to the linear predictor (= offset).
@@ -5141,6 +5178,11 @@ class GPModel(object):
                                             convert_to_type=np.float64)
             if X.shape[0] != self.num_data:
                 raise ValueError("Incorrect number of data points in X")
+            if not self.std_dev_has_been_set and not (X.shape[1] == 1 and np.all(X[:, 0] == 1)): # not only intercept
+                if params is None:
+                    params = {"std_dev": True}
+                elif "std_dev" not in params:
+                    params["std_dev"] = True
             self.has_covariates = True
             self.num_covariates = X.shape[1]
             self.num_coef = self.num_covariates * self.num_sets_fe
@@ -5438,7 +5480,8 @@ class GPModel(object):
             init_aux_pars_c,
             ctypes.c_bool(self.params["estimate_aux_pars"]),
             self.params["estimate_cov_par_index"].ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
-            ctypes.c_int(self.params["m_lbfgs"])))
+            ctypes.c_int(self.params["m_lbfgs"]),
+            ctypes.c_double(self.params["delta_conv_mode_finding"])))
         return self
 
     def _get_optim_params(self):

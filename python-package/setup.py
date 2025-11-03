@@ -14,6 +14,12 @@ from setuptools.command.install_lib import install_lib
 from setuptools.command.sdist import sdist
 from wheel.bdist_wheel import bdist_wheel
 
+from setuptools import Distribution
+
+class BinaryDistribution(Distribution):
+    def has_ext_modules(self):
+        return True
+
 GPBOOST_OPTIONS = [
     ('mingw', 'm', 'Compile with MinGW'),
     ('integrated-opencl', None, 'Compile integrated OpenCL version'),
@@ -32,7 +38,6 @@ GPBOOST_OPTIONS = [
     ('opencl-include-dir=', None, 'OpenCL include directory'),
     ('opencl-library=', None, 'Path to OpenCL library')
 ]
-
 
 def find_lib() -> List[str]:
     libpath_py = CURRENT_DIR / 'gpboost' / 'libpath.py'
@@ -309,6 +314,15 @@ class CustomBdistWheel(bdist_wheel):
         install.nomp = self.nomp
         install.bit32 = self.bit32
 
+        self.root_is_pure = False
+        self.python_tag = 'py3'
+
+    def get_tag(self):
+        # Force a Python-version-independent, platform-specific wheel:
+        # (py3, none, <platform>)
+        _, _, plat = super().get_tag()
+        return ('py3', 'none', plat)
+
 
 class CustomSdist(sdist):
 
@@ -366,6 +380,7 @@ if __name__ == "__main__":
           maintainer='Fabio Sigrist',
           maintainer_email='fabiosigrist@gmail.com',
           zip_safe=False,
+          distclass=BinaryDistribution,
           cmdclass={
               'install': CustomInstall,
               'install_lib': CustomInstallLib,
@@ -374,6 +389,7 @@ if __name__ == "__main__":
           },
           packages=find_packages(),
           include_package_data=True,
+          package_data={'gpboost': ['*.so', '*.dll', '*.dylib']},
           license='Apache License, Version 2.0, + see LICENSE file',
           url='https://github.com/fabsig/GPBoost',
           classifiers=['Development Status :: 5 - Production/Stable',
