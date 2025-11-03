@@ -121,7 +121,10 @@ namespace GPBoost {
         }
         const double* __restrict__ col_i = chol_ip_cross_cov + i * num_ip;
         const double* __restrict__ coord_i_ptr = coords + i * d;
-        double corr_diag_i = corr_diag[i];
+        double corr_diag_i;
+        if (dist_funct != 3) {
+            corr_diag_i = corr_diag[i];
+        }
         // each thread checks candidates j < i
         int end_at_i = min(i, end_at);
         for (int j = tid; j < end_at_i; j += blockDim.x) {
@@ -253,16 +256,20 @@ namespace GPBoost {
         Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> coords_row = coords;
 
         CUDA_CHECK(cudaMalloc(&d_coords, coords_row.size() * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov.size() * sizeof(double)));
+        if (dist_funct != 3) {
+            CUDA_CHECK(cudaMalloc(&d_corr_diag, corr_diag.size() * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_pars, pars.size() * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_chol_ip_cross_cov, chol_ip_cross_cov.size() * sizeof(double)));
+        }
         CUDA_CHECK(cudaMalloc(&d_neighbors, total_threads * num_neighbors * sizeof(int)));
 
         // --- copy data to device ---
         CUDA_CHECK(cudaMemcpy(d_coords, coords_row.data(), coords_row.size() * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
+        if (dist_funct != 3) {
+            CUDA_CHECK(cudaMemcpy(d_corr_diag, corr_diag.data(), corr_diag.size() * sizeof(double), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_pars, pars.data(), pars.size() * sizeof(double), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_chol_ip_cross_cov, chol_ip_cross_cov.data(), chol_ip_cross_cov.size() * sizeof(double), cudaMemcpyHostToDevice));
+        }
         // --- launch kernel ---
         //int threads = 128;
         //int blocks = total_threads;   // one block per query point
@@ -327,9 +334,11 @@ namespace GPBoost {
         }
         // --- cleanup ---
         cudaFree(d_coords);
-        cudaFree(d_corr_diag);
-        cudaFree(d_pars);
-        cudaFree(d_chol_ip_cross_cov);
+        if (dist_funct != 3) {
+            cudaFree(d_corr_diag);
+            cudaFree(d_pars);
+            cudaFree(d_chol_ip_cross_cov);
+        }
         cudaFree(d_neighbors);
         return true;
     }
