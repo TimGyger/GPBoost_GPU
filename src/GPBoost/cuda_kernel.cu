@@ -148,11 +148,16 @@ namespace GPBoost {
                 range_dist = pars[2] / (exp(d_aux_time_log * pars[5] * 0.5) * inv_r);
                 var = pars[0] / (exp(d_aux_time_log * (pars[6] + pars[5] * (d - 1) * 0.5)));
             }
-            double cov = Matern_GPU_case(var, range_dist, shape);
+            double dij;
+            if (dist_funct == 3) {
+                dij = sum;
+            }
+            else {
+                double cov = Matern_GPU_case(var, range_dist, shape);
 
-            double num = cov - dot;
-            double dij = corr_diag_i * corr_diag[j] / (num * num);
-
+                double num = cov - dot;
+                double dij = corr_diag_i * corr_diag[j] / (num * num);
+            }
             // insert into local top-k
             int worst = 0;
             for (int kk = 1; kk < k; kk++) {

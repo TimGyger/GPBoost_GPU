@@ -789,10 +789,18 @@ namespace GPBoost {
 			if (GPU_use && neighbor_selection == "nearest") {
 				if (num_data > num_neighbors + 1) {
 					bool success = false;
+					vec_t corr_diag, pars;
+					int num_neighbors, cov_fct_shape_int;
+					den_mat_t chol_ip_cross_cov;
+					double range_param;
 #ifdef USE_CUDA_GP
-					success = find_nearest_neighbors_Vecchia_fast_GPU(coords, num_data, num_neighbors, num_close_neighbors,
-						start_at, end_search_at, dim_coords, sort_sum, sort_inv_sum, coords_sum, neighbors, dist_obs_neighbors, save_distances, has_duplicates,
-						check_has_duplicates);
+					//success = find_nearest_neighbors_Vecchia_fast_GPU(coords, num_data, num_neighbors, num_close_neighbors,
+					//	start_at, end_search_at, dim_coords, sort_sum, sort_inv_sum, coords_sum, neighbors, dist_obs_neighbors, save_distances, has_duplicates,
+					//	check_has_duplicates);
+
+					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors, pars,
+						start_at, brute_force_threshold, end_search_at, (int)coords.cols(), corr_diag, chol_ip_cross_cov,
+						cov_fct_shape_int, range_param, EPSILON_NUMBERS, 3, neighbors, 0);
 #endif 
 					if (!success) {
 						Log::REInfo("GPU neighbor search failed! Restart on CPU!");
@@ -1081,7 +1089,7 @@ namespace GPBoost {
 				entries_init_B_cluster_i.push_back(Triplet_t(i, i, 1.));//Put 1's on the diagonal since B = I - A
 			}
 		}
-		if (vecchia_neighbor_selection == "residual_correlation" || vecchia_neighbor_selection == "correlation") {
+		if (vecchia_neighbor_selection == "residual_correlation" || vecchia_neighbor_selection == "correlation" || GPU_use) {
 			has_duplicates = false;
 			den_mat_t coords = re_comp->GetCoords();
 			//Intialize neighbor vectors
