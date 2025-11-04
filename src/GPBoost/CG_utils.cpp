@@ -1012,7 +1012,11 @@ namespace GPBoost {
 		vec_t centered_zt_AI_A_deriv_PI_z = zt_AI_A_deriv_PI_z.array() - tr_AI_A_deriv;
 		vec_t centered_zt_BI_B_deriv_PI_z = zt_BI_B_deriv_PI_z.array() - tr_BI_B_deriv;
 		c_opt = (centered_zt_AI_A_deriv_PI_z.cwiseProduct(centered_zt_BI_B_deriv_PI_z)).mean();
-		c_opt /= (centered_zt_BI_B_deriv_PI_z.cwiseProduct(centered_zt_BI_B_deriv_PI_z)).mean();
+		double c_denom = (centered_zt_BI_B_deriv_PI_z.cwiseProduct(centered_zt_BI_B_deriv_PI_z)).mean();
+		c_opt /= c_denom;
+		if (c_denom == 0) {
+			c_opt = 1;
+		}
 	} // end CalcOptimalC
 
 	void CalcOptimalCVectorized(const den_mat_t& Z_AI_A_deriv_PI_Z,
