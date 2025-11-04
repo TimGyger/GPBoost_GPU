@@ -450,13 +450,20 @@ namespace GPBoost {
 					cov_fct_shape = re_comp->CovFunctionShape();
 					dist_funct = 1;
 				}
-				int cov_fct_shape_int = (int)(cov_fct_shape * 10);
+				int cov_fct_shape_int = (int)(cov_fct_shape * 10);// faster to compare int than double on GPU
 				double range_param = (covfct == "matern_ard") ? 1. : pars[1];
+				den_mat_t coords_unique_scaled;
+				if (covfct == "matern_ard") {
+					re_comp->ScaleCoordinates(pars, coords, coords_unique_scaled);
+				}
+				else {
+					coords_unique_scaled = coords;
+				}
 				//double var = pars[0];
 				bool success = false;
 				if ((TwoNumbersAreEqual<double>(cov_fct_shape, 0.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 1.5) || TwoNumbersAreEqual<double>(cov_fct_shape, 2.5)) && dist_funct != 0) {
 #ifdef USE_CUDA_GP
-					success = find_nearest_neighbors_bruteforce_GPU(coords, num_data, num_neighbors, pars,
+					success = find_nearest_neighbors_bruteforce_GPU(coords_unique_scaled, num_data, num_neighbors, pars,
 						start_at, brute_force_threshold, end_search_at, (int)coords.cols(), corr_diag, chol_ip_cross_cov,
 						cov_fct_shape_int, range_param, EPSILON_NUMBERS, dist_funct, neighbors, start_dim);
 #endif 
