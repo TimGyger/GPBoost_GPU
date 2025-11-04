@@ -4758,8 +4758,6 @@ namespace GPBoost {
 								CalcLogDetStochDerivAuxParVecchia(deriv_information_aux_par, D_inv_plus_W_inv_diag, diag_WI, PI_Z, WI_PI_Z, WI_WI_plus_Sigma_inv_Z, d_detmll_d_aux_par, re_comps_cross_cov_cluster_i);
 							}
 						}
-						Log::REInfo("Test %g %g %g %g %g %g", deriv_information_aux_par.mean(), second_deriv_loc_aux_par.mean(), neg_likelihood_deriv[ind_ap],
-							d_detmll_d_aux_par, implicit_derivative, SigmaI_plus_W_inv_diag.mean());
 						aux_par_grad[ind_ap] = neg_likelihood_deriv[ind_ap] + 0.5 * d_detmll_d_aux_par + implicit_derivative;
 					}
 					SetGradAuxParsNotEstimated(aux_par_grad);
@@ -4890,8 +4888,6 @@ namespace GPBoost {
 								}
 							}
 						}
-						Log::REInfo("Test %g %g %g %g %g %g", deriv_information_aux_par.mean(), second_deriv_loc_aux_par.mean(), neg_likelihood_deriv[ind_ap],
-							d_detmll_d_aux_par, implicit_derivative, SigmaI_plus_W_inv_diag.mean());
 						aux_par_grad[ind_ap] = neg_likelihood_deriv[ind_ap] + 0.5 * d_detmll_d_aux_par + implicit_derivative;
 					}
 					SetGradAuxParsNotEstimated(aux_par_grad);
@@ -10737,10 +10733,8 @@ namespace GPBoost {
 					zt_PI_P_deriv_PI_z = ((PI_Z.cwiseProduct(P_deriv_rm * PI_Z)).colwise().sum()).transpose();
 					tr_PI_P_deriv = zt_PI_P_deriv_PI_z.mean();
 					//optimal c
-					Log::REInfo("a %g", d_detmll_d_aux_par);
 					CalcOptimalC(zt_SigmaI_plus_W_inv_W_deriv_PI_z, zt_PI_P_deriv_PI_z, tr_SigmaI_plus_W_inv_W_deriv, tr_PI_P_deriv, c_opt);
 					d_detmll_d_aux_par += c_opt * tr_D_inv_plus_W_inv_W_deriv - c_opt * tr_PI_P_deriv;
-					Log::REInfo("a1 %g %g %g %g", d_detmll_d_aux_par, c_opt, tr_D_inv_plus_W_inv_W_deriv, tr_PI_P_deriv);
 				}
 			}
 			else {
