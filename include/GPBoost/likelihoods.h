@@ -4747,6 +4747,7 @@ namespace GPBoost {
 									}
 								}
 							}
+							Log::REInfo("Test %g %g %g", deriv_information_aux_par.mean(), second_deriv_loc_aux_par.mean(), SigmaI_plus_W_inv_d_mll_d_mode.mean());
 						}//end if grad_information_wrt_mode_non_zero_
 						else {// grad_information_wrt_mode is zero
 							if (use_random_effects_indices_of_data_) {
