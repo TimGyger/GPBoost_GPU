@@ -4747,7 +4747,8 @@ namespace GPBoost {
 									}
 								}
 							}
-							Log::REInfo("Test %g %g %g", deriv_information_aux_par.mean(), second_deriv_loc_aux_par.mean(), SigmaI_plus_W_inv_d_mll_d_mode.mean());
+							Log::REInfo("Test %g %g %g %g %g", deriv_information_aux_par.mean(), second_deriv_loc_aux_par.mean(), neg_likelihood_deriv[ind_ap],
+								d_detmll_d_aux_par, implicit_derivative);
 						}//end if grad_information_wrt_mode_non_zero_
 						else {// grad_information_wrt_mode is zero
 							if (use_random_effects_indices_of_data_) {
@@ -4889,6 +4890,8 @@ namespace GPBoost {
 								}
 							}
 						}
+						Log::REInfo("Test %g %g %g %g %g", deriv_information_aux_par.mean(), second_deriv_loc_aux_par.mean(), neg_likelihood_deriv[ind_ap],
+							d_detmll_d_aux_par, implicit_derivative);
 						aux_par_grad[ind_ap] = neg_likelihood_deriv[ind_ap] + 0.5 * d_detmll_d_aux_par + implicit_derivative;
 					}
 					SetGradAuxParsNotEstimated(aux_par_grad);
