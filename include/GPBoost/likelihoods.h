@@ -4755,8 +4755,10 @@ namespace GPBoost {
 								CalcLogDetStochDerivAuxParVecchia(Zt_deriv_information_aux_par, D_inv_plus_W_inv_diag, diag_WI, PI_Z, WI_PI_Z, WI_WI_plus_Sigma_inv_Z, d_detmll_d_aux_par, re_comps_cross_cov_cluster_i);
 							}
 							else {
+								Log::REInfo("a1");
 								CalcLogDetStochDerivAuxParVecchia(deriv_information_aux_par, D_inv_plus_W_inv_diag, diag_WI, PI_Z, WI_PI_Z, WI_WI_plus_Sigma_inv_Z, d_detmll_d_aux_par, re_comps_cross_cov_cluster_i);
 							}
+							Log::REInfo("a");
 						}
 						Log::REInfo("Test %g %g %g %g %g %g", deriv_information_aux_par.mean(), second_deriv_loc_aux_par.mean(), neg_likelihood_deriv[ind_ap],
 							d_detmll_d_aux_par, implicit_derivative, SigmaI_plus_W_inv_diag.mean());
