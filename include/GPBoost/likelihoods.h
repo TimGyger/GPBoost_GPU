@@ -4264,6 +4264,8 @@ namespace GPBoost {
 									else {
 										d_detmll_d_aux_par = (SigmaI_plus_W_inv_Z_.cwiseProduct(deriv_information_aux_par.asDiagonal() * PI_Z)).colwise().sum().mean();
 									}
+									Log::REInfo("Test %g %g %g %g %g %g", neg_likelihood_deriv[ind_ap], d_detmll_d_aux_par, implicit_derivative, 
+										deriv_information_aux_par.mean(), SigmaI_plus_W_inv_Z_.colwise().sum().mean(), PI_Z.colwise().sum().mean());
 								}
 							}
 							aux_par_grad[ind_ap] = neg_likelihood_deriv[ind_ap] + 0.5 * d_detmll_d_aux_par + implicit_derivative;
