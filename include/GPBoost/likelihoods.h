@@ -3961,7 +3961,6 @@ namespace GPBoost {
 										}
 									}
 								}
-								Log::REInfo("c");
 							}//end if grad_information_wrt_mode_non_zero_
 							else {// grad_information_wrt_mode is zero
 								if (use_random_effects_indices_of_data_) {
@@ -4005,7 +4004,6 @@ namespace GPBoost {
 									d_detmll_d_aux_par += (deriv_information_aux_par.array() * information_ll_.cwiseInverse().array()).sum();
 								}
 							}
-							Log::REInfo("Test %g %g %g", neg_likelihood_deriv[ind_ap], d_detmll_d_aux_par, implicit_derivative);
 							aux_par_grad[ind_ap] = neg_likelihood_deriv[ind_ap] + 0.5 * d_detmll_d_aux_par + implicit_derivative;
 						}
 						SetGradAuxParsNotEstimated(aux_par_grad);
@@ -4240,10 +4238,23 @@ namespace GPBoost {
 					}//end calc_cov_grad
 					//Calculate gradient wrt fixed effects
 					vec_t SigmaI_plus_W_inv_diag;
-					if (use_random_effects_indices_of_data_ && (calc_F_grad || calc_aux_par_grad)) {
+					//if (use_random_effects_indices_of_data_ && (calc_F_grad || calc_aux_par_grad)) {
+					//	//Stochastic Trace: Calculate diagonal of SigmaI_plus_W_inv for gradient of approx. marginal likelihood wrt. F
+					//	SigmaI_plus_W_inv_diag = d_log_det_Sigma_W_plus_I_d_mode;
+					//	SigmaI_plus_W_inv_diag.array() *= -1. / deriv_information_diag_loc_par.array();
+					//}
+					if (grad_information_wrt_mode_non_zero_ && ((use_random_effects_indices_of_data_ && calc_F_grad) || calc_aux_par_grad)) {
 						//Stochastic Trace: Calculate diagonal of SigmaI_plus_W_inv for gradient of approx. marginal likelihood wrt. F
 						SigmaI_plus_W_inv_diag = d_log_det_Sigma_W_plus_I_d_mode;
 						SigmaI_plus_W_inv_diag.array() *= -1. / deriv_information_diag_loc_par.array();
+						if (grad_information_wrt_mode_can_be_zero_for_some_points_) {
+#pragma omp parallel for schedule(static)
+							for (int i = 0; i < (int)SigmaI_plus_W_inv_diag.size(); ++i) {
+								if (GPBoost::IsZero<double>(deriv_information_diag_loc_par[i])) {
+									SigmaI_plus_W_inv_diag[i] = 0.;//set to 0 for safety, but this is actually not needed
+								}
+							}
+						} //end grad_information_wrt_mode_can_be_zero_for_some_points_
 					}
 					if (calc_F_grad) {
 						if (use_random_effects_indices_of_data_) {
@@ -4275,18 +4286,84 @@ namespace GPBoost {
 							CalcSecondDerivLogLikFirstDerivInformationAuxPar(y_data, y_data_int, location_par_ptr, ind_ap, second_deriv_loc_aux_par.data(), deriv_information_aux_par.data());
 							double d_detmll_d_aux_par = 0., implicit_derivative = 0.;
 							if (grad_information_wrt_mode_non_zero_) {
-								if (use_random_effects_indices_of_data_) {
-#pragma omp parallel for schedule(static) reduction(+:d_detmll_d_aux_par, implicit_derivative)
-									for (data_size_t i = 0; i < num_data_; ++i) {
-										d_detmll_d_aux_par += deriv_information_aux_par[i] * SigmaI_plus_W_inv_diag[random_effects_indices_of_data_[i]];
-										implicit_derivative += second_deriv_loc_aux_par[i] * SigmaI_plus_W_inv_d_mll_d_mode[random_effects_indices_of_data_[i]];
+								bool deriv_information_loc_par_has_zero = false;
+								if (grad_information_wrt_mode_can_be_zero_for_some_points_) {
+									deriv_information_loc_par_has_zero = GPBoost::HasZero<double>(deriv_information_diag_loc_par.data(), (data_size_t)deriv_information_diag_loc_par.size());
+								}
+								if (deriv_information_loc_par_has_zero) {//deriv_information_diag_loc_par has some zeros
+									if (use_random_effects_indices_of_data_) {
+										vec_t Zt_deriv_information_aux_par(dim_mode_);
+										CalcZtVGivenIndices(num_data_, dim_mode_, random_effects_indices_of_data_, deriv_information_aux_par.data(), Zt_deriv_information_aux_par.data(), true);
+										if (cg_preconditioner_type_ == "vifdu") {
+											//Stochastic Trace: Calculate tr((Sigma^(-1) + W)^(-1) dW/daux)
+											vec_t zt_SigmaI_plus_W_inv_W_deriv_PI_z = ((SigmaI_plus_W_inv_Z_.cwiseProduct(Zt_deriv_information_aux_par.asDiagonal() * PI_Z)).colwise().sum()).transpose();
+											double tr_SigmaI_plus_W_inv_W_deriv_d = zt_SigmaI_plus_W_inv_W_deriv_PI_z.mean();
+											d_detmll_d_aux_par = tr_SigmaI_plus_W_inv_W_deriv_d;
+											//variance reduction
+											//stochastic tr(P^(-1) dP/daux), where dP/daux = B^T dW/daux B
+											sp_mat_rm_t P_deriv_rm = B_rm_.transpose() * Zt_deriv_information_aux_par.asDiagonal() * B_rm_;
+											vec_t W_D_inv_inv_neg_third_deriv_W_D_inv_inv = (W_D_inv_inv.array().square() * Zt_deriv_information_aux_par.array()).matrix();
+											double tr_D_inv_plus_W_inv_W_deriv = (W_D_inv_inv.cwiseProduct(Zt_deriv_information_aux_par)).sum() +
+												(chol_fact_sigma_woodbury_woodbury_.solve(D_inv_B_cross_cov_.transpose() * (W_D_inv_inv_neg_third_deriv_W_D_inv_inv.asDiagonal() * D_inv_B_cross_cov_))).trace();
+											vec_t zt_PI_P_deriv_PI_z = ((PI_Z.cwiseProduct(P_deriv_rm * PI_Z)).colwise().sum()).transpose();
+											double tr_PI_P_deriv = zt_PI_P_deriv_PI_z.mean();
+											//optimal 
+											CalcOptimalC(zt_SigmaI_plus_W_inv_W_deriv_PI_z, zt_PI_P_deriv_PI_z, tr_SigmaI_plus_W_inv_W_deriv_d, tr_D_inv_plus_W_inv_W_deriv, c_opt);
+											d_detmll_d_aux_par -= c_opt * (tr_PI_P_deriv - tr_D_inv_plus_W_inv_W_deriv);
+										}
+										else {
+											d_detmll_d_aux_par = (SigmaI_plus_W_inv_Z_.cwiseProduct(Zt_deriv_information_aux_par.asDiagonal() * PI_Z)).colwise().sum().mean();
+										}
+									}
+									else {
+										if (cg_preconditioner_type_ == "vifdu") {
+											//Stochastic Trace: Calculate tr((Sigma^(-1) + W)^(-1) dW/daux)
+											vec_t zt_SigmaI_plus_W_inv_W_deriv_PI_z = ((SigmaI_plus_W_inv_Z_.cwiseProduct(deriv_information_aux_par.asDiagonal() * PI_Z)).colwise().sum()).transpose();
+											double tr_SigmaI_plus_W_inv_W_deriv_d = zt_SigmaI_plus_W_inv_W_deriv_PI_z.mean();
+											d_detmll_d_aux_par = tr_SigmaI_plus_W_inv_W_deriv_d;
+											//variance reduction
+											//stochastic tr(P^(-1) dP/daux), where dP/daux = B^T dW/daux B
+											sp_mat_rm_t P_deriv_rm = B_rm_.transpose() * deriv_information_aux_par.asDiagonal() * B_rm_;
+											vec_t W_D_inv_inv_neg_third_deriv_W_D_inv_inv = (W_D_inv_inv.array().square() * deriv_information_aux_par.array()).matrix();
+											double tr_D_inv_plus_W_inv_W_deriv = (W_D_inv_inv.cwiseProduct(deriv_information_aux_par)).sum() +
+												(chol_fact_sigma_woodbury_woodbury_.solve(D_inv_B_cross_cov_.transpose() * (W_D_inv_inv_neg_third_deriv_W_D_inv_inv.asDiagonal() * D_inv_B_cross_cov_))).trace();
+											vec_t zt_PI_P_deriv_PI_z = ((PI_Z.cwiseProduct(P_deriv_rm * PI_Z)).colwise().sum()).transpose();
+											double tr_PI_P_deriv = zt_PI_P_deriv_PI_z.mean();
+											//optimal 
+											CalcOptimalC(zt_SigmaI_plus_W_inv_W_deriv_PI_z, zt_PI_P_deriv_PI_z, tr_SigmaI_plus_W_inv_W_deriv_d, tr_D_inv_plus_W_inv_W_deriv, c_opt);
+											d_detmll_d_aux_par -= c_opt * (tr_PI_P_deriv - tr_D_inv_plus_W_inv_W_deriv);
+										}
+										else {
+											d_detmll_d_aux_par = (SigmaI_plus_W_inv_Z_.cwiseProduct(deriv_information_aux_par.asDiagonal() * PI_Z)).colwise().sum().mean();
+										}
+									}
+									if (use_random_effects_indices_of_data_) {
+#pragma omp parallel for schedule(static) reduction(+:implicit_derivative)
+										for (data_size_t i = 0; i < num_data_; ++i) {
+											implicit_derivative += second_deriv_loc_aux_par[i] * SigmaI_plus_W_inv_d_mll_d_mode[random_effects_indices_of_data_[i]];
+										}
+									}
+									else {
+#pragma omp parallel for schedule(static) reduction(+:implicit_derivative)
+										for (data_size_t i = 0; i < num_data_; ++i) {
+											implicit_derivative += second_deriv_loc_aux_par[i] * SigmaI_plus_W_inv_d_mll_d_mode[i];
+										}
 									}
 								}
-								else {
+								else {//deriv_information_diag_loc_par is non-zero everywhere (!deriv_information_loc_par_has_zero )
+									if (use_random_effects_indices_of_data_) {
 #pragma omp parallel for schedule(static) reduction(+:d_detmll_d_aux_par, implicit_derivative)
-									for (data_size_t i = 0; i < num_data_; ++i) {
-										d_detmll_d_aux_par += deriv_information_aux_par[i] * SigmaI_plus_W_inv_diag[i];
-										implicit_derivative += second_deriv_loc_aux_par[i] * SigmaI_plus_W_inv_d_mll_d_mode[i];
+										for (data_size_t i = 0; i < num_data_; ++i) {
+											d_detmll_d_aux_par += deriv_information_aux_par[i] * SigmaI_plus_W_inv_diag[random_effects_indices_of_data_[i]];
+											implicit_derivative += second_deriv_loc_aux_par[i] * SigmaI_plus_W_inv_d_mll_d_mode[random_effects_indices_of_data_[i]];
+										}
+									}
+									else {
+#pragma omp parallel for schedule(static) reduction(+:d_detmll_d_aux_par, implicit_derivative)
+										for (data_size_t i = 0; i < num_data_; ++i) {
+											d_detmll_d_aux_par += deriv_information_aux_par[i] * SigmaI_plus_W_inv_diag[i];
+											implicit_derivative += second_deriv_loc_aux_par[i] * SigmaI_plus_W_inv_d_mll_d_mode[i];
+										}
 									}
 								}
 							}//end if grad_information_wrt_mode_non_zero_
@@ -4550,6 +4627,9 @@ namespace GPBoost {
 					}
 					SetGradAuxParsNotEstimated(aux_par_grad);
 				}//end calc_aux_par_grad
+			}
+			for (int ind_ap = 0; ind_ap < num_aux_pars_; ++ind_ap) {
+				Log::REInfo("Test %g", aux_par_grad[ind_ap]);
 			}
 		}//end CalcGradNegMargLikelihoodLaplaceApproxFSVA
 
