@@ -5073,6 +5073,9 @@ namespace GPBoost {
 					}
 				}
 			}//end calc_F_grad
+			for (int ind_ap = 0; ind_ap < num_aux_pars_; ++ind_ap) {
+				Log::REInfo("Test %g", aux_par_grad[ind_ap], );
+			}
 		}//end CalcGradNegMargLikelihoodLaplaceApproxVecchia
 
 		/*!
