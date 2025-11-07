@@ -3893,6 +3893,7 @@ namespace GPBoost {
 										implicit_derivative += second_deriv_loc_aux_par[i] * SigmaI_plus_W_inv_d_mll_d_mode[i];
 									}
 								}
+								Log::REInfo("c");
 							}//end if grad_information_wrt_mode_non_zero_
 							else {// grad_information_wrt_mode is zero
 								if (use_random_effects_indices_of_data_) {
@@ -3915,6 +3916,7 @@ namespace GPBoost {
 									CalcOptimalC(zt_SigmaI_plus_W_inv_W_deriv_PI_z, zt_PI_P_deriv_PI_z, tr_SigmaI_plus_W_inv_W_deriv_d, tr_D_inv_plus_W_inv_W_deriv, c_opt);
 									d_detmll_d_aux_par -= c_opt * (tr_PI_P_deriv - tr_D_inv_plus_W_inv_W_deriv);
 									d_detmll_d_aux_par += (Zt_deriv_information_aux_par.array() * information_ll_.cwiseInverse().array()).sum();
+									Log::REInfo("b");
 								}
 								else {
 									//Stochastic Trace: Calculate tr((Sigma^(-1) + W)^(-1) dW/daux)
@@ -3934,10 +3936,10 @@ namespace GPBoost {
 									CalcOptimalC(zt_SigmaI_plus_W_inv_W_deriv_PI_z, zt_PI_P_deriv_PI_z, tr_SigmaI_plus_W_inv_W_deriv_d, tr_D_inv_plus_W_inv_W_deriv, c_opt);
 									d_detmll_d_aux_par -= c_opt * (tr_PI_P_deriv - tr_D_inv_plus_W_inv_W_deriv);
 									d_detmll_d_aux_par += (deriv_information_aux_par.array() * information_ll_.cwiseInverse().array()).sum();
-									Log::REInfo("Test %g %g %g %g %g %g %g %g %g", neg_likelihood_deriv[ind_ap], d_detmll_d_aux_par, implicit_derivative, c_opt,
-										deriv_information_aux_par.mean(), information_ll_.mean(), tr_SigmaI_plus_W_inv_W_deriv_d, tr_PI_P_deriv, tr_D_inv_plus_W_inv_W_deriv);
+									Log::REInfo("a");
 								}
 							}
+							Log::REInfo("Test %g %g %g", neg_likelihood_deriv[ind_ap], d_detmll_d_aux_par, implicit_derivative);
 							aux_par_grad[ind_ap] = neg_likelihood_deriv[ind_ap] + 0.5 * d_detmll_d_aux_par + implicit_derivative;
 						}
 						SetGradAuxParsNotEstimated(aux_par_grad);
