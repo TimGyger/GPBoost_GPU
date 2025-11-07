@@ -4574,7 +4574,7 @@ namespace GPBoost {
 					else if (calc_aux_par_grad || (use_random_effects_indices_of_data_ && grad_information_wrt_mode_non_zero_)) {
 						SigmaI_plus_W_inv_diag = (SigmaI_plus_W_inv.diagonal().array() + SigmaI_plus_W_inv_diag.array()).matrix();
 					}
-				}
+				}//end calc_F_grad || calc_aux_par_grad
 				// Calculate gradient wrt fixed effects
 				if (calc_F_grad) {
 					if (use_random_effects_indices_of_data_) {
@@ -4627,9 +4627,6 @@ namespace GPBoost {
 					}
 					SetGradAuxParsNotEstimated(aux_par_grad);
 				}//end calc_aux_par_grad
-			}
-			for (int ind_ap = 0; ind_ap < num_aux_pars_; ++ind_ap) {
-				Log::REInfo("Test %g", aux_par_grad[ind_ap]);
 			}
 		}//end CalcGradNegMargLikelihoodLaplaceApproxFSVA
 
